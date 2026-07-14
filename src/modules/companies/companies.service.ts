@@ -1,16 +1,16 @@
-import { Injectable } from '@nestjs/common';
-import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
-import { Company } from '#/common/entities/company.entity';
-import { NotificationSetting } from '#/common/entities/notification-setting.entity';
-import {
-  ResourceConflictException,
-  ResourceNotFoundException,
-} from '#/common/exceptions';
-import { CreateCompanyDto } from './dto/create-company.dto';
-import { UpdateCompanyDto } from './dto/update-company.dto';
-import { UsersService } from '#/modules/users/users.service';
-import { TeamRoleType } from '#/common/types/team-role.type';
+import {Injectable} from '@nestjs/common';
+import {InjectDataSource, InjectRepository} from '@nestjs/typeorm';
+import {DataSource, EntityManager, Repository} from 'typeorm';
+import {Company} from '#/common/entities/company.entity';
+import {NotificationSetting} from '#/common/entities/notification-setting.entity';
+import {ResourceConflictException, ResourceNotFoundException,} from '#/common/exceptions';
+import {CreateCompanyDto} from './dto/create-company.dto';
+import {UpdateCompanyDto} from './dto/update-company.dto';
+import {UsersService} from '#/modules/users/users.service';
+import {TeamRoleType} from '#/common/types/team-role.type';
+import {UsageService} from '#/modules/usage/usage.service';
+import {SubscriptionsService} from '#/modules/subscriptions/subscriptions.service';
+import {SubscriptionPlan} from '#/common/constants/subscription-plan.constant';
 
 @Injectable()
 export class CompaniesService {
@@ -19,29 +19,33 @@ export class CompaniesService {
     @InjectRepository(Company)
     private readonly companyRepo: Repository<Company>,
     private readonly usersService: UsersService,
+    private readonly subscriptionsService: SubscriptionsService,
+    private readonly usageService: UsageService,
   ) {}
 
   /**
-   * Creates a company, its default notification settings row, AND the
-   * requesting user's "owner" role, all in one transaction — a company
-   * should never exist without a settings row or without an owner, so all
-   * three are created together rather than left as separate steps that
-   * could partially fail and leave an orphaned company.
+   * Creates a company and everything it needs to function on day one, all
+   * in ONE transaction: notification settings, a FREE subscription, usage
+   * tracking, and the requesting user's "owner" role. If any step fails,
+   * everything rolls back — there is no state where a company exists
+   * without a subscription, without usage tracking, or without an owner.
    *
-   * `ownerUserId` must be the verified caller's ID — TODO: source this
-   * from an auth guard once one exists on /companies/register; there is
-   * currently no guard attaching a verified user to the request, so the
-   * controller has nothing real to pass here yet.
-   *
-   * Pass `manager` when calling this from inside another service's own
-   * transaction.
+   * `ownerUserId` must come from SupabaseAuthGuard via @CurrentUser() at
+   * the controller — never from the request body.
    */
   async createCompany(
     dto: CreateCompanyDto,
     ownerUserId: string,
-    ownerName: string,
     manager?: EntityManager,
   ): Promise<Company> {
+    const supabaseUser =
+      await this.usersService.getUserFromSupabase(ownerUserId);
+    const ownerName =
+      ((supabaseUser.user_metadata as Record<string, unknown> | null)
+        ?.full_name as string | undefined) ??
+      supabaseUser.email ??
+      'Unknown';
+
     return this.withTransaction(manager, async (trx) => {
       const existing = await trx
         .getRepository(Company)
@@ -59,14 +63,18 @@ export class CompaniesService {
       });
       const saved = await trx.getRepository(Company).save(company);
 
-      const settings = trx.getRepository(NotificationSetting).create({
-        companyId: saved.id,
-      });
+      const settings = trx
+        .getRepository(NotificationSetting)
+        .create({ companyId: saved.id });
       await trx.getRepository(NotificationSetting).save(settings);
 
-      // Owner role, created in the SAME transaction — if this step fails,
-      // the company and settings rows above are rolled back too, so this
-      // method never leaves behind a company with zero owners.
+      await this.subscriptionsService.createSubscription(
+        saved.id,
+        SubscriptionPlan.FREE,
+        trx,
+      );
+      await this.usageService.createUsage(saved.id, 1, trx);
+
       await this.usersService.createUserRole(
         {
           userId: ownerUserId,

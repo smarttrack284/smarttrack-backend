@@ -5,15 +5,15 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CompaniesModule } from '#/modules/companies/companies.module';
 import { UsersModule } from '#/modules/users/users.module';
+import { SupabaseModule } from '#/common/supabase/supabase.module';
 
 @Module({
   imports: [
-    // Config module setup for env variables
     ConfigModule.forRoot({
       isGlobal: true,
+      envFilePath: '.env',
     }),
-
-    // Database setup
+    SupabaseModule,
     TypeOrmModule.forRootAsync({
       useFactory: (config: ConfigService) => ({
         type: 'postgres',

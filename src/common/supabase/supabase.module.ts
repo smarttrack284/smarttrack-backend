@@ -1,15 +1,11 @@
-import { Module } from '@nestjs/common';
-import { createSupabaseAdminClient } from '#/config/supabase.config';
+import { Global, Module } from '@nestjs/common';
 
-export const SUPABASE_CLIENT = Symbol('SUPABASE_CLIENT');
+import { SupabaseAdminProvider } from './supabase.provider';
+import { SupabaseAuthGuard } from '#/common/guards/supabase-auth.guard';
 
+@Global()
 @Module({
-  providers: [
-    {
-      provide: SUPABASE_CLIENT,
-      useFactory: () => createSupabaseAdminClient(),
-    },
-  ],
-  exports: [SUPABASE_CLIENT],
+  providers: [SupabaseAdminProvider, SupabaseAuthGuard],
+  exports: [SupabaseAdminProvider, SupabaseAuthGuard],
 })
 export class SupabaseModule {}

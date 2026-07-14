@@ -8,7 +8,7 @@ import {
   ResourceNotFoundException,
 } from '#/common/exceptions';
 import { SupabaseClient, User } from '@supabase/supabase-js';
-import { SUPABASE_CLIENT } from '#/common/supabase/supabase.module';
+import { SUPABASE_CLIENT } from '#/common/constants/supabase.constant';
 
 @Injectable()
 export class UsersService {
