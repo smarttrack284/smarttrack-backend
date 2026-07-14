@@ -21,11 +21,12 @@ export class CompaniesController {
   constructor(private readonly companiesService: CompaniesService) {}
 
   @UseGuards(SupabaseAuthGuard)
-  @Post('register')
+@Post('register')
   async register(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateCompanyDto,
   ) {
+    
     return this.companiesService.createCompany(dto, user.id);
   }
 
