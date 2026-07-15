@@ -175,4 +175,19 @@ export class UsageService {
       return trx.getRepository(Usage).save(usage);
     });
   }
+  
+  /** Call when an order is deleted — the inverse of incrementOrderCount. No limit check needed, only ever decreasing. */
+async decrementOrderCount(companyId: string, manager?: EntityManager): Promise<Usage> {
+  return this.withTransaction(manager, async (trx) => {
+    const usage = await trx.getRepository(Usage).findOne({
+      where: { companyId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!usage) {
+      throw new ResourceNotFoundException('Usage');
+    }
+    usage.ordersThisPeriod = Math.max(0, usage.ordersThisPeriod - 1);
+    return trx.getRepository(Usage).save(usage);
+  });
+}
 }
