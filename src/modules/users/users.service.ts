@@ -91,6 +91,26 @@ export class UsersService {
   }
 
   /**
+   * Finds a user's role WITHOUT already knowing their companyId — the entry
+   * point for "which company does this authenticated user belong to,"
+   * needed by OrdersService (and any future module) to scope operations to
+   * the caller's own company rather than trusting a companyId from the
+   * request. Assumes one company per user for this MVP; if multi-company
+   * membership is ever needed, this needs to return a list instead.
+   */
+  async getUserRoleByUserId(
+    userId: string,
+    manager?: EntityManager,
+  ): Promise<UserRole> {
+    const repo = manager ? manager.getRepository(UserRole) : this.userRoleRepo;
+    const userRole = await repo.findOne({ where: { userId } });
+    if (!userRole) {
+      throw new ResourceNotFoundException('UserRole');
+    }
+    return userRole;
+  }
+
+  /**
    * Same pattern as CompaniesService.withTransaction — participates in an
    * already-open transaction if `manager` is passed (e.g. from
    * CompaniesService.createCompany, so a company and its owner's role are
