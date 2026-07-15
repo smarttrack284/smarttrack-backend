@@ -22,11 +22,9 @@ import { UpdateOrderStatusDto } from "./dto/update-order-status.dto";
 import { ListOrdersQueryDto } from "./dto/list-orders.query.dto";
 import { UpdateOrderDto } from "./dto/update-order.dto";
 
-const user = {
-    id: "d141a507-5cd4-4dfc-8009-0e6ce1cf2524"
-};
 
-//@UseGuards(SupabaseAuthGuard)
+
+@UseGuards(SupabaseAuthGuard)
 @Controller("orders")
 export class OrdersController {
     constructor(

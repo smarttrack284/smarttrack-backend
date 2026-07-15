@@ -1,11 +1,26 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Module } from "@nestjs/common";
 
-import { SupabaseAdminProvider } from './supabase.provider';
-import { SupabaseAuthGuard } from '#/common/guards/supabase-auth.guard';
+import { SupabaseAdminProvider } from "./supabase.provider";
+import { SupabaseAuthGuard } from "#/common/guards/supabase-auth.guard";
+import {TypeOrmModule} from "@nestjs/typeorm"
+import {ConfigService} from "@nestjs/config";
 
 @Global()
 @Module({
-  providers: [SupabaseAdminProvider, SupabaseAuthGuard],
-  exports: [SupabaseAdminProvider, SupabaseAuthGuard],
+    imports: [
+        TypeOrmModule.forRootAsync({
+            useFactory: (config: ConfigService) => ({
+                type: "postgres",
+                url: config.get<string>("SUPABASE_DATABASE_URL"),
+                password: config.get<string>("SUPABASE_DB_PASSWORD"),
+                autoLoadEntities: true,
+                logging: config.get<string>("NODE_ENV") === "production",
+                synchronize: config.get<string>("NODE_ENV") === "production"
+            }),
+            inject: [ConfigService]
+        })
+    ],
+    providers: [SupabaseAdminProvider, SupabaseAuthGuard],
+    exports: [SupabaseAdminProvider, SupabaseAuthGuard]
 })
 export class SupabaseModule {}

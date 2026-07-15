@@ -7,6 +7,8 @@ import { CompaniesModule } from "#/modules/companies/companies.module";
 import { UsersModule } from "#/modules/users/users.module";
 import { SupabaseModule } from "#/common/supabase/supabase.module";
 import { OrdersModule } from "#/modules/orders/orders.module";
+import { DispatchModule } from "#/modules/dispatch/dispatch.module";
+import { TeamModule } from "#/modules/team/team.module";
 
 @Module({
     imports: [
@@ -15,21 +17,11 @@ import { OrdersModule } from "#/modules/orders/orders.module";
             envFilePath: ".env"
         }),
         SupabaseModule,
-        TypeOrmModule.forRootAsync({
-            useFactory: (config: ConfigService) => ({
-                type: "postgres",
-                url: config.get<string>("SUPABASE_DATABASE_URL"),
-                password: config.get<string>("SUPABASE_DB_PASSWORD"),
-                autoLoadEntities: true,
-                logging: config.get<string>("NODE_ENV") === "production",
-                synchronize: config.get<string>("NODE_ENV") === "production"
-            }),
-            inject: [ConfigService]
-        }),
-
         CompaniesModule,
         UsersModule,
-        OrdersModule
+        OrdersModule,
+        DispatchModule,
+        TeamModule
     ],
 
     controllers: [AppController],
