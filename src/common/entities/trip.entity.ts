@@ -41,6 +41,27 @@ export class Trip {
   @OneToMany(() => TripStop, (stop) => stop.trip, { cascade: true })
   stops: TripStop[];
 
+  @Column({
+    name: 'driver_location_lat',
+    type: 'double precision',
+    nullable: true,
+  })
+  driverLocationLat: number | null;
+
+  @Column({
+    name: 'driver_location_lng',
+    type: 'double precision',
+    nullable: true,
+  })
+  driverLocationLng: number | null;
+
+  @Column({
+    name: 'driver_location_updated_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  driverLocationUpdatedAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

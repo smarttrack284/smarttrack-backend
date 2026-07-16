@@ -1,13 +1,14 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication, } from '@nestjs/platform-fastify';
-
 import helmet from '@fastify/helmet';
 import compress from '@fastify/compress';
 import cookie from '@fastify/cookie';
 
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from '#/common/filters/global-filter.filter';
+import { ConfigService } from '@nestjs/config';
+import { RedisIoAdapter } from '#/common/websockets/redis-io.adapter';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -56,6 +57,10 @@ async function bootstrap() {
   app.useGlobalFilters(new GlobalExceptionFilter());
 
   const port = Number(process.env.PORT) || 3000;
+
+  const redisIoAdapter = new RedisIoAdapter(app, app.get(ConfigService));
+  await redisIoAdapter.connectToRedis();
+  app.useWebSocketAdapter(redisIoAdapter);
 
   await app.listen({
     port,
