@@ -54,7 +54,7 @@ export class OrdersService {
         dto: CreateOrderDto,
         createdByUserId: string,
         manager?: EntityManager
-    ): Promise<Order> {
+    ) {
         const userRole =
             await this.usersService.getUserRoleByUserId(createdByUserId);
 
@@ -88,7 +88,7 @@ export class OrdersService {
                 status: OrderStatus.PENDING
             });
 
-            return trx.getRepository(Order).save(order);
+            await trx.getRepository(Order).save(order);
         });
     }
 
@@ -181,7 +181,7 @@ export class OrdersService {
         companyId: string,
         dto: UpdateOrderStatusDto,
         manager?: EntityManager
-    ): Promise<Order> {
+    ) {
         return this.withTransaction(manager, async trx => {
             const order = await trx
                 .getRepository(Order)
@@ -203,7 +203,7 @@ export class OrdersService {
             }
 
             order.status = dto.status;
-            return trx.getRepository(Order).save(order);
+            await trx.getRepository(Order).save(order);
         });
     }
 
@@ -263,7 +263,7 @@ export class OrdersService {
         companyId: string,
         dto: UpdateOrderDto,
         manager?: EntityManager
-    ): Promise<Order> {
+    ) {
         return this.withTransaction(manager, async trx => {
             const order = await trx.getRepository(Order).findOne({
                 where: { id: orderId },
@@ -332,7 +332,7 @@ export class OrdersService {
                 );
             }
 
-            return trx.getRepository(Order).save(order);
+            await trx.getRepository(Order).save(order);
         });
     }
 
@@ -351,7 +351,7 @@ export class OrdersService {
         orderId: string,
         companyId: string,
         manager?: EntityManager
-    ): Promise<void> {
+    ) {
         await this.withTransaction(manager, async trx => {
             const order = await trx
                 .getRepository(Order)

@@ -32,16 +32,18 @@ export class DispatchController {
         @Body() dto: DispatchOrdersDto
     ) {
         const userRole = await this.usersService.getUserRoleByUserId(user.id);
-        const trip = await this.dispatchService.dispatchOrdersToDriver(
+        
+        await this.dispatchService.dispatchOrdersToDriver(
             userRole.companyId,
             user.id,
             dto
         );
-        const fullTrip = await this.dispatchService.getTripForCompany(
-            trip.id,
-            userRole.companyId
-        );
-        return this.dispatchService.toTripResponse(fullTrip);
+        // const fullTrip = await this.dispatchService.getTripForCompany(
+        //             trip.id,
+        //             userRole.companyId
+        //         );
+        // return this.dispatchService.toTripResponse(fullTrip);
+        return { success: true };
     }
 
     @Get()

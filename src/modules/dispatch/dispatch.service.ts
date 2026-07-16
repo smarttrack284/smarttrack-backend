@@ -72,7 +72,7 @@ export class DispatchService {
         companyId: string,
         dispatcherUserId: string,
         dto: DispatchOrdersDto
-    ): Promise<Trip> {
+    ) {
         const driverRole = await this.usersService.getUserRole(
             dto.driverUserId,
             companyId
@@ -123,7 +123,7 @@ export class DispatchService {
             }
 
             savedTrip.stops = stops;
-            return savedTrip;
+          
         });
     }
 

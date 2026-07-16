@@ -22,8 +22,6 @@ import { UpdateOrderStatusDto } from "./dto/update-order-status.dto";
 import { ListOrdersQueryDto } from "./dto/list-orders.query.dto";
 import { UpdateOrderDto } from "./dto/update-order.dto";
 
-
-
 @UseGuards(SupabaseAuthGuard)
 @Controller("orders")
 export class OrdersController {
@@ -37,7 +35,8 @@ export class OrdersController {
         @CurrentUser() user: AuthenticatedUser,
         @Body() dto: CreateOrderDto
     ) {
-        return this.ordersService.createOrder(dto, user.id);
+        await this.ordersService.createOrder(dto, user.id);
+        return { success: true };
     }
 
     @Get()
@@ -71,11 +70,12 @@ export class OrdersController {
         @Body() dto: UpdateOrderStatusDto
     ) {
         const userRole = await this.usersService.getUserRoleByUserId(user.id);
-        return this.ordersService.updateOrderStatusForCompany(
+        await this.ordersService.updateOrderStatusForCompany(
             orderId,
             userRole.companyId,
             dto
         );
+        return { success: true };
     }
 
     @Patch(":orderId")
@@ -85,15 +85,17 @@ export class OrdersController {
         @Body() dto: UpdateOrderDto
     ) {
         const userRole = await this.usersService.getUserRoleByUserId(user.id);
-        return this.ordersService.updateOrderForCompany(
+        await this.ordersService.updateOrderForCompany(
             orderId,
             userRole.companyId,
             dto
         );
+        return {
+            success: true
+        };
     }
 
     @Delete(":orderId")
-    @HttpCode(HttpStatus.NO_CONTENT)
     async removeOrder(
         @CurrentUser() user: AuthenticatedUser,
         @Param("orderId", ParseUUIDPipe) orderId: string
@@ -103,5 +105,6 @@ export class OrdersController {
             orderId,
             userRole.companyId
         );
+        return {success:true}
     }
 }

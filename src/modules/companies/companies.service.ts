@@ -41,7 +41,7 @@ export class CompaniesService {
         dto: CreateCompanyDto,
         ownerUserId: string,
         manager?: EntityManager
-    ): Promise<Company> {
+    ) {
         const supabaseUser =
             await this.usersService.getUserFromSupabase(ownerUserId);
         const ownerName =
@@ -92,7 +92,7 @@ export class CompaniesService {
                 trx
             );
 
-            return saved;
+            return this.standardCompanyData(saved);
         });
     }
 
@@ -102,10 +102,7 @@ export class CompaniesService {
      * service's transaction (e.g. reading a company as part of a larger
      * multi-step write) without opening a second connection.
      */
-    async getCompanyById(
-        companyId: string,
-        manager?: EntityManager
-    ): Promise<Company> {
+    async getCompanyById(companyId: string, manager?: EntityManager) {
         const repo = manager
             ? manager.getRepository(Company)
             : this.companyRepo;
@@ -113,25 +110,23 @@ export class CompaniesService {
         if (!company) {
             throw new ResourceNotFoundException("Company", companyId);
         }
-        return company;
+        return this.standardCompanyData(company);
     }
 
     /** Returns null rather than throwing — used internally for uniqueness checks, not as a public "get" lookup. */
-    async getCompanyByEmail(
-        email: string,
-        manager?: EntityManager
-    ): Promise<Company | null> {
+    async getCompanyByEmail(email: string, manager?: EntityManager) {
         const repo = manager
             ? manager.getRepository(Company)
             : this.companyRepo;
-        return repo.findOne({ where: { email } });
+        const company = await repo.findOne({ where: { email } });
+        return this.standardCompanyData(company);
     }
 
     async updateCompany(
         companyId: string,
         dto: UpdateCompanyDto,
         manager?: EntityManager
-    ): Promise<Company> {
+    ) {
         return this.withTransaction(manager, async trx => {
             const repo = trx.getRepository(Company);
             const company = await repo.findOne({ where: { id: companyId } });
@@ -151,7 +146,8 @@ export class CompaniesService {
             }
 
             Object.assign(company, dto);
-            return repo.save(company);
+            const saved = await repo.save(company);
+            return this.standardCompanyData(saved);
         });
     }
 
@@ -217,5 +213,16 @@ export class CompaniesService {
         } finally {
             await queryRunner.release();
         }
+    }
+
+    private standardCompanyData(company: Company | null) {
+        if (!company) return;
+        return {
+            id: company.id,
+            name: company.name,
+            email: company.email,
+            timezone: company.timezone,
+            logoUrl: company.logoUrl
+        };
     }
 }
