@@ -45,7 +45,11 @@ export class UserRole {
   @Column({ type: 'enum', enum: TeamRoleType })
   role: TeamRoleType;
 
-  @Column({ type: 'enum', enum: TeamMemberStatus, default: TeamMemberStatus.INVITED })
+  @Column({
+    type: 'enum',
+    enum: TeamMemberStatus,
+    default: TeamMemberStatus.INVITED,
+  })
   status: TeamMemberStatus;
 
   @Column({ name: 'invited_at', type: 'timestamptz', nullable: true })
@@ -53,6 +57,21 @@ export class UserRole {
 
   @Column({ name: 'joined_at', type: 'timestamptz', nullable: true })
   joinedAt: Date | null;
+
+  @Column({
+    name: 'invite_token_hash',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  inviteTokenHash: string | null;
+
+  @Column({
+    name: 'invite_token_expires_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  inviteTokenExpiresAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

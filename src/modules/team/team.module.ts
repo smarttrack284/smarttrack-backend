@@ -5,9 +5,17 @@ import { UsageModule } from '#/modules/usage/usage.module';
 import { UsersModule } from '#/modules/users/users.module';
 import { TeamService } from './team.service';
 import { TeamController } from './team.controller';
+import { MailModule } from '#/modules/mail/mail.module';
+import { SupabaseModule } from '#/common/supabase/supabase.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([UserRole]), UsageModule, UsersModule],
+  imports: [
+    TypeOrmModule.forFeature([UserRole]),
+    UsageModule,
+    UsersModule,
+    MailModule,
+    SupabaseModule,
+  ],
   controllers: [TeamController],
   providers: [TeamService],
   exports: [TeamService],
