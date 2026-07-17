@@ -15,24 +15,32 @@ import {
   MAX_PLAUSIBLE_SPEED_KPH,
   MIN_MOVEMENT_METERS,
 } from '#/common/constants/gps-validation.constant';
-import { ForbiddenAppException, ResourceNotFoundException } from '#/common/exceptions';
-import { deriveTripStatus, getCurrentStop, getTripProgress } from '#/common/utils/trip-status.util';
-import { haversineDistanceMeters, type GeoPoint } from '#/common/utils/geo-distance.util';
+import { ForbiddenAppException, ResourceNotFoundException, } from '#/common/exceptions';
+import { deriveTripStatus, getCurrentStop, getTripProgress, } from '#/common/utils/trip-status.util';
+import { type GeoPoint, haversineDistanceMeters, } from '#/common/utils/geo-distance.util';
 import { UsersService } from '#/modules/users/users.service';
 import { TrackingEmitterService } from './tracking-emitter.service';
 import { RadarEtaService } from './radar-eta.service';
 import { UpdateDriverLocationDto } from './dto/update-driver-location.dto';
-import { TRACKING_QUEUE_NAME, TrackingJobName } from './constants/tracking-queue.constant';
+import { TRACKING_QUEUE_NAME, TrackingJobName, } from './constants/tracking-queue.constant';
 
 export type LocationUpdateResult =
   | { accepted: true }
-  | { accepted: false; reason: 'low_accuracy' | 'stale_timestamp' | 'quarantined_pending_confirmation' | 'no_change' };
+  | {
+      accepted: false;
+      reason:
+        | 'low_accuracy'
+        | 'stale_timestamp'
+        | 'quarantined_pending_confirmation'
+        | 'no_change';
+    };
 
 @Injectable()
 export class TrackingService {
   constructor(
     @InjectRepository(Trip) private readonly tripRepo: Repository<Trip>,
-    @InjectRepository(TripStop) private readonly tripStopRepo: Repository<TripStop>,
+    @InjectRepository(TripStop)
+    private readonly tripStopRepo: Repository<TripStop>,
     @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
     private readonly usersService: UsersService,
     private readonly emitter: TrackingEmitterService,
@@ -54,66 +62,100 @@ export class TrackingService {
   ): Promise<LocationUpdateResult> {
     const trip = await this.tripRepo.findOne({
       where: { id: tripId },
-      select: [
-        'id',
-        'driverUserId',
-        'driverLocationLat',
-        'driverLocationLng',
-        'driverLocationAccuracy',
-        'driverLocationClientTimestamp',
-        'driverLocationUpdatedAt',
-        'candidateLocationLat',
-        'candidateLocationLng',
-        'candidateLocationAt',
-      ],
+      select: {
+        id: true,
+        driverUserId: true,
+        driverLocationLat: true,
+        driverLocationLng: true,
+        driverLocationAccuracy: true,
+        driverLocationClientTimestamp: true,
+        driverLocationUpdatedAt: true,
+        candidateLocationLat: true,
+        candidateLocationLng: true,
+        candidateLocationAt: true,
+      },
     });
     if (!trip) throw new ResourceNotFoundException('Trip', tripId);
     if (trip.driverUserId !== driverUserId) {
-      throw new ForbiddenAppException('You are not the driver assigned to this trip');
+      throw new ForbiddenAppException(
+        'You are not the driver assigned to this trip',
+      );
     }
 
     // Edge case: GPS fix too imprecise to trust (indoors, urban canyon).
     // Discarded quietly rather than erroring — this is a normal, frequent
     // occurrence for a moving device, not a client bug.
-    if (dto.accuracyMeters !== undefined && dto.accuracyMeters > MAX_ACCEPTABLE_ACCURACY_METERS) {
+    if (
+      dto.accuracyMeters !== undefined &&
+      dto.accuracyMeters > MAX_ACCEPTABLE_ACCURACY_METERS
+    ) {
       return { accepted: false, reason: 'low_accuracy' };
     }
 
     const newPoint: GeoPoint = { lat: dto.lat, lng: dto.lng };
-    const newTimestamp = dto.clientTimestamp ? new Date(dto.clientTimestamp) : new Date();
+    const newTimestamp = dto.clientTimestamp
+      ? new Date(dto.clientTimestamp)
+      : new Date();
 
     // Edge case: out-of-order delivery (mobile network retry re-sends an
     // older point after a newer one already landed).
-    if (trip.driverLocationClientTimestamp && newTimestamp <= trip.driverLocationClientTimestamp) {
+    if (
+      trip.driverLocationClientTimestamp &&
+      newTimestamp <= trip.driverLocationClientTimestamp
+    ) {
       return { accepted: false, reason: 'stale_timestamp' };
     }
 
-    const hasPriorLocation = trip.driverLocationLat !== null && trip.driverLocationLng !== null;
+    const hasPriorLocation =
+      trip.driverLocationLat !== null && trip.driverLocationLng !== null;
 
     if (hasPriorLocation) {
-      const lastPoint: GeoPoint = { lat: trip.driverLocationLat!, lng: trip.driverLocationLng! };
-      const lastTimestamp = trip.driverLocationClientTimestamp ?? trip.driverLocationUpdatedAt!;
-      const elapsedSeconds = Math.max(1, (newTimestamp.getTime() - lastTimestamp.getTime()) / 1000);
+      const lastPoint: GeoPoint = {
+        lat: trip.driverLocationLat!,
+        lng: trip.driverLocationLng!,
+      };
+      const lastTimestamp =
+        trip.driverLocationClientTimestamp ?? trip.driverLocationUpdatedAt!;
+      const elapsedSeconds = Math.max(
+        1,
+        (newTimestamp.getTime() - lastTimestamp.getTime()) / 1000,
+      );
       const distanceMeters = haversineDistanceMeters(lastPoint, newPoint);
       const impliedSpeedKph = distanceMeters / 1000 / (elapsedSeconds / 3600);
 
       // Edge case: implausible jump in a short time window — likely a bad
       // GPS fix, not real movement, UNLESS enough time has passed that a
       // large jump is plausible anyway (device was offline/backgrounded).
-      const isImplausibleJump = impliedSpeedKph > MAX_PLAUSIBLE_SPEED_KPH && elapsedSeconds < LARGE_GAP_THRESHOLD_SECONDS;
+      const isImplausibleJump =
+        impliedSpeedKph > MAX_PLAUSIBLE_SPEED_KPH &&
+        elapsedSeconds < LARGE_GAP_THRESHOLD_SECONDS;
 
       if (isImplausibleJump) {
-        const hasCandidate = trip.candidateLocationLat !== null && trip.candidateLocationLng !== null;
+        const hasCandidate =
+          trip.candidateLocationLat !== null &&
+          trip.candidateLocationLng !== null;
 
         if (hasCandidate) {
-          const candidatePoint: GeoPoint = { lat: trip.candidateLocationLat!, lng: trip.candidateLocationLng! };
-          const distanceFromCandidate = haversineDistanceMeters(candidatePoint, newPoint);
+          const candidatePoint: GeoPoint = {
+            lat: trip.candidateLocationLat!,
+            lng: trip.candidateLocationLng!,
+          };
+          const distanceFromCandidate = haversineDistanceMeters(
+            candidatePoint,
+            newPoint,
+          );
 
           if (distanceFromCandidate <= CONFIRM_RADIUS_METERS) {
             // Two consecutive points agree — this is real movement, not a
             // glitch. Accept the NEW point as the confirmed location and
             // clear the candidate.
-            await this.persistAcceptedLocation(tripId, newPoint, dto.accuracyMeters ?? null, newTimestamp, true);
+            await this.persistAcceptedLocation(
+              tripId,
+              newPoint,
+              dto.accuracyMeters ?? null,
+              newTimestamp,
+              true,
+            );
             await this.enqueueTripBroadcast(tripId);
             return { accepted: true };
           }
@@ -123,7 +165,11 @@ export class TrackingService {
         // than trusting or discarding it outright.
         await this.tripRepo.update(
           { id: tripId },
-          { candidateLocationLat: newPoint.lat, candidateLocationLng: newPoint.lng, candidateLocationAt: newTimestamp },
+          {
+            candidateLocationLat: newPoint.lat,
+            candidateLocationLng: newPoint.lng,
+            candidateLocationAt: newTimestamp,
+          },
         );
         return { accepted: false, reason: 'quarantined_pending_confirmation' };
       }
@@ -132,45 +178,36 @@ export class TrackingService {
       // was a one-off glitch, not the start of a real trend. Clear it.
       const movedFarEnough = distanceMeters >= MIN_MOVEMENT_METERS;
       const staleEnoughForHeartbeat =
-        !trip.driverLocationUpdatedAt || Date.now() - trip.driverLocationUpdatedAt.getTime() >= HEARTBEAT_INTERVAL_MS;
+        !trip.driverLocationUpdatedAt ||
+        Date.now() - trip.driverLocationUpdatedAt.getTime() >=
+          HEARTBEAT_INTERVAL_MS;
 
       if (!movedFarEnough && !staleEnoughForHeartbeat) {
         return { accepted: false, reason: 'no_change' };
       }
     }
 
-    await this.persistAcceptedLocation(tripId, newPoint, dto.accuracyMeters ?? null, newTimestamp, true);
+    await this.persistAcceptedLocation(
+      tripId,
+      newPoint,
+      dto.accuracyMeters ?? null,
+      newTimestamp,
+      true,
+    );
     await this.enqueueTripBroadcast(tripId);
     return { accepted: true };
-  }
-
-  private async persistAcceptedLocation(
-    tripId: string,
-    point: GeoPoint,
-    accuracyMeters: number | null,
-    clientTimestamp: Date,
-    clearCandidate: boolean,
-  ): Promise<void> {
-    await this.tripRepo.update(
-      { id: tripId },
-      {
-        driverLocationLat: point.lat,
-        driverLocationLng: point.lng,
-        driverLocationAccuracy: accuracyMeters,
-        driverLocationClientTimestamp: clientTimestamp,
-        driverLocationUpdatedAt: new Date(),
-        ...(clearCandidate
-          ? { candidateLocationLat: null, candidateLocationLng: null, candidateLocationAt: null }
-          : {}),
-      },
-    );
   }
 
   async enqueueTripBroadcast(tripId: string): Promise<void> {
     await this.trackingQueue.add(
       TrackingJobName.BROADCAST_TRIP_UPDATE,
       { tripId },
-      { attempts: 3, backoff: { type: 'exponential', delay: 2000 }, removeOnComplete: 500, removeOnFail: 1000 },
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 2000 },
+        removeOnComplete: 500,
+        removeOnFail: 1000,
+      },
     );
   }
 
@@ -199,57 +236,31 @@ export class TrackingService {
       trip.etaSource = eta.source;
       await this.tripRepo.update(
         { id: tripId },
-        { etaMinutes: eta.minutes, etaCalculatedAt: trip.etaCalculatedAt, etaSource: eta.source },
+        {
+          etaMinutes: eta.minutes,
+          etaCalculatedAt: trip.etaCalculatedAt,
+          etaSource: eta.source,
+        },
       );
     }
 
-    this.emitter.emitToInternalRoom(tripId, 'trip:update', this.toInternalPayload(trip));
-
-    for (const stop of trip.stops) {
-      const stopEta = stop.id === currentStop?.id ? { minutes: trip.etaMinutes, source: trip.etaSource } : null;
-      this.emitter.emitToPublicRoom(stop.order.trackingNumber, 'tracking:update', this.toPublicPayload(trip, stop, stopEta));
-    }
-  }
-
-  /**
-   * Calls RadarEtaService for a real routed duration. If Radar is
-   * unavailable/rate-limited, falls back to the LAST KNOWN real ETA
-   * (still radar-sourced originally, just aging) rather than fabricating
-   * a new number — the payload's etaSource tells the frontend explicitly
-   * which case occurred, so it can show "ETA unavailable" honestly
-   * instead of a number that looks precise but isn't trustworthy.
-   */
-  private async resolveEta(
-    trip: Trip,
-    currentStop: TripStop | null,
-  ): Promise<{ minutes: number | null; source: 'radar' | 'cached' | 'unavailable' } | null> {
-    if (!currentStop || trip.driverLocationLat === null || trip.driverLocationLng === null) {
-      return null; // edge case: no active stop, or no location yet — no ETA to show
-    }
-
-    const target =
-      currentStop.status === StopStatus.PENDING ? currentStop.order.pickupLocation : currentStop.order.dropoffLocation;
-
-    const result = await this.radarEtaService.getEtaMinutes(
-      { lat: trip.driverLocationLat, lng: trip.driverLocationLng },
-      { lat: target.lat, lng: target.lng },
+    this.emitter.emitToInternalRoom(
+      tripId,
+      'trip:update',
+      this.toInternalPayload(trip),
     );
 
-    if (result.source === 'radar') {
-      return result;
+    for (const stop of trip.stops) {
+      const stopEta =
+        stop.id === currentStop?.id
+          ? { minutes: trip.etaMinutes, source: trip.etaSource }
+          : null;
+      this.emitter.emitToPublicRoom(
+        stop.order.trackingNumber,
+        'tracking:update',
+        this.toPublicPayload(trip, stop, stopEta),
+      );
     }
-
-    // Radar call failed this round — fall back to the previous real value
-    // if it's not too old, rather than showing nothing at all for a
-    // single transient failure.
-    if (trip.etaMinutes !== null && trip.etaCalculatedAt) {
-      const ageMs = Date.now() - trip.etaCalculatedAt.getTime();
-      if (ageMs < 5 * 60_000) {
-        return { minutes: trip.etaMinutes, source: 'cached' };
-      }
-    }
-
-    return { minutes: null, source: 'unavailable' };
   }
 
   toInternalPayload(trip: Trip) {
@@ -259,7 +270,11 @@ export class TrackingService {
       status: deriveTripStatus(trip.stops),
       progress: getTripProgress(trip.stops),
       currentStop: getCurrentStop(trip.stops),
-      eta: { minutes: trip.etaMinutes, source: trip.etaSource, calculatedAt: trip.etaCalculatedAt },
+      eta: {
+        minutes: trip.etaMinutes,
+        source: trip.etaSource,
+        calculatedAt: trip.etaCalculatedAt,
+      },
       driverLocation: trip.driverLocationLat
         ? {
             lat: trip.driverLocationLat,
@@ -294,7 +309,9 @@ export class TrackingService {
 
     const userRole = await this.usersService.getUserRoleByUserId(userId);
     if (userRole.companyId !== trip.companyId) {
-      throw new ForbiddenAppException('This trip does not belong to your company');
+      throw new ForbiddenAppException(
+        'This trip does not belong to your company',
+      );
     }
   }
 
@@ -319,9 +336,87 @@ export class TrackingService {
     }
 
     const eta =
-      stop.trip.etaMinutes !== null ? { minutes: stop.trip.etaMinutes, source: stop.trip.etaSource } : null;
+      stop.trip.etaMinutes !== null
+        ? { minutes: stop.trip.etaMinutes, source: stop.trip.etaSource }
+        : null;
 
     return this.toPublicPayload(stop.trip, stop, eta);
+  }
+
+  private async persistAcceptedLocation(
+    tripId: string,
+    point: GeoPoint,
+    accuracyMeters: number | null,
+    clientTimestamp: Date,
+    clearCandidate: boolean,
+  ): Promise<void> {
+    await this.tripRepo.update(
+      { id: tripId },
+      {
+        driverLocationLat: point.lat,
+        driverLocationLng: point.lng,
+        driverLocationAccuracy: accuracyMeters,
+        driverLocationClientTimestamp: clientTimestamp,
+        driverLocationUpdatedAt: new Date(),
+        ...(clearCandidate
+          ? {
+              candidateLocationLat: null,
+              candidateLocationLng: null,
+              candidateLocationAt: null,
+            }
+          : {}),
+      },
+    );
+  }
+
+  /**
+   * Calls RadarEtaService for a real routed duration. If Radar is
+   * unavailable/rate-limited, falls back to the LAST KNOWN real ETA
+   * (still radar-sourced originally, just aging) rather than fabricating
+   * a new number — the payload's etaSource tells the frontend explicitly
+   * which case occurred, so it can show "ETA unavailable" honestly
+   * instead of a number that looks precise but isn't trustworthy.
+   */
+  private async resolveEta(
+    trip: Trip,
+    currentStop: TripStop | null,
+  ): Promise<{
+    minutes: number | null;
+    source: 'radar' | 'cached' | 'unavailable';
+  } | null> {
+    if (
+      !currentStop ||
+      trip.driverLocationLat === null ||
+      trip.driverLocationLng === null
+    ) {
+      return null; // edge case: no active stop, or no location yet — no ETA to show
+    }
+
+    const target =
+      currentStop.status === StopStatus.PENDING
+        ? currentStop.order.pickupLocation
+        : currentStop.order.dropoffLocation;
+
+    const result = await this.radarEtaService.getEtaMinutes(
+      { lat: trip.driverLocationLat, lng: trip.driverLocationLng },
+      { lat: target.lat, lng: target.lng },
+    );
+
+    if (result.source === 'radar') {
+      return result;
+    }
+
+    // Radar call failed this round — fall back to the previous real value
+    // if it's not too old, rather than showing nothing at all for a
+    // single transient failure.
+    if (trip.etaMinutes !== null && trip.etaCalculatedAt) {
+      const ageMs = Date.now() - trip.etaCalculatedAt.getTime();
+      if (ageMs < 5 * 60_000) {
+        return { minutes: trip.etaMinutes, source: 'cached' };
+      }
+    }
+
+    return { minutes: null, source: 'unavailable' };
   }
 
   private toPublicPayload(
@@ -336,7 +431,11 @@ export class TrackingService {
       stopStatus: stop.status,
       eta,
       driverLocation: trip.driverLocationLat
-        ? { lat: trip.driverLocationLat, lng: trip.driverLocationLng, updatedAt: trip.driverLocationUpdatedAt }
+        ? {
+            lat: trip.driverLocationLat,
+            lng: trip.driverLocationLng,
+            updatedAt: trip.driverLocationUpdatedAt,
+          }
         : null,
       updatedAt: new Date().toISOString(),
     };

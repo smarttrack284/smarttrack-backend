@@ -13,6 +13,8 @@ import { AuthCoreModule } from '#/common/auth/auth-core.module';
 import { TrackingModule } from '#/modules/tracking/tracking.module';
 import { APP_GUARD } from '@nestjs/core';
 import { RateLimitModule } from '#/common/rate-limit/rate-limit.module';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { OverviewModule } from '#/modules/overview/overview.module';
 
 @Module({
   imports: [
@@ -20,6 +22,7 @@ import { RateLimitModule } from '#/common/rate-limit/rate-limit.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    EventEmitterModule,
     RateLimitModule,
     SupabaseModule,
     AuthCoreModule,
@@ -29,6 +32,7 @@ import { RateLimitModule } from '#/common/rate-limit/rate-limit.module';
     DispatchModule,
     TeamModule,
     TrackingModule,
+    OverviewModule,
   ],
 
   controllers: [AppController],
