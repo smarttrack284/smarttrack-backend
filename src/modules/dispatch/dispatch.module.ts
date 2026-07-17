@@ -6,9 +6,15 @@ import { OrdersModule } from '#/modules/orders/orders.module';
 import { UsersModule } from '#/modules/users/users.module';
 import { DispatchService } from './dispatch.service';
 import { DispatchController } from './dispatch.controller';
+import { TrackingModule } from '#/modules/tracking/tracking.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Trip, TripStop]), OrdersModule, UsersModule],
+  imports: [
+    TypeOrmModule.forFeature([Trip, TripStop]),
+    OrdersModule,
+    UsersModule,
+    TrackingModule,
+  ],
   controllers: [DispatchController],
   providers: [DispatchService],
   exports: [DispatchService],

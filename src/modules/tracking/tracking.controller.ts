@@ -6,14 +6,14 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { SupabaseAuthGuard } from '#/common/guards/supabase-auth.guard';
 import { CurrentUser } from '#/common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '#/common/types/authenticated-user.type';
 import { TrackingService } from './tracking.service';
 import { UpdateDriverLocationDto } from './dto/update-driver-location.dto';
 
-@UseGuards(SupabaseAuthGuard)
+@UseGuards(SupabaseAuthGuard, ThrottlerGuard)
 @Controller('dispatch/trips')
 export class TrackingController {
   constructor(private readonly trackingService: TrackingService) {}

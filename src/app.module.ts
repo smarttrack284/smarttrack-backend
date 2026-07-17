@@ -8,9 +8,11 @@ import { SupabaseModule } from '#/common/supabase/supabase.module';
 import { OrdersModule } from '#/modules/orders/orders.module';
 import { DispatchModule } from '#/modules/dispatch/dispatch.module';
 import { TeamModule } from '#/modules/team/team.module';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { AuthCoreModule } from '#/common/auth/auth-core.module';
 import { TrackingModule } from '#/modules/tracking/tracking.module';
+import { APP_GUARD } from '@nestjs/core';
+import { RateLimitModule } from '#/common/rate-limit/rate-limit.module';
 
 @Module({
   imports: [
@@ -18,7 +20,7 @@ import { TrackingModule } from '#/modules/tracking/tracking.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    RateLimitModule,
     SupabaseModule,
     AuthCoreModule,
     CompaniesModule,
@@ -30,6 +32,12 @@ import { TrackingModule } from '#/modules/tracking/tracking.module';
   ],
 
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}
