@@ -30,14 +30,13 @@ export class TrackingController {
    * throttler storage is the fix if you scale beyond one instance and this
    * matters precisely.
    */
-  @Throttle({ default: { limit: 1, ttl: 3000 } })
-  @Post(':tripId/location')
-  async updateLocation(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('tripId', ParseUUIDPipe) tripId: string,
-    @Body() dto: UpdateDriverLocationDto,
-  ) {
-    await this.trackingService.updateDriverLocation(tripId, user.id, dto);
-    return { success: true };
-  }
+ @Throttle({ default: { limit: 1, ttl: 3000 } })
+@Post(':tripId/location')
+async updateLocation(
+  @CurrentUser() user: AuthenticatedUser,
+  @Param('tripId', ParseUUIDPipe) tripId: string,
+  @Body() dto: UpdateDriverLocationDto,
+) {
+  return this.trackingService.updateDriverLocation(tripId, user.id, dto);
+}
 }
