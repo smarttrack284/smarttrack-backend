@@ -5,6 +5,7 @@ import { Trip } from "#/common/entities/trip.entity";
 import { TripStop } from "#/common/entities/trip-stop.entity";
 import { StopStatus } from "#/common/constants/stop-status.constant";
 import { OrderStatus } from "#/common/constants/order-status.constant";
+import { TripStatus } from "#/common/constants/trip-status.constant";
 import { TeamRoleType } from "#/common/types/team-role.type";
 import {
     deriveTripStatus,
@@ -22,6 +23,9 @@ import { TrackingService } from "#/modules/tracking/tracking.service";
 import { DispatchOrdersDto } from "./dto/dispatch-orders.dto";
 import { SkipStopDto } from "./dto/skip-stop.dto";
 import { ListTripsQueryDto } from "./dto/list-trips.query.dto";
+import { OnEvent } from "@nestjs/event-emitter";
+import { RedisCacheService } from "#/common/cache/redis-cache.service";
+import { TRIP_EVENTS, TripUpdatedEvent } from "#/common/events/trip.events";
 
 @Injectable()
 export class DispatchService {
@@ -38,7 +42,8 @@ export class DispatchService {
         private readonly tripStopRepo: Repository<TripStop>,
         private readonly ordersService: OrdersService,
         private readonly usersService: UsersService,
-        private readonly trackingService: TrackingService
+        private readonly trackingService: TrackingService,
+        private readonly cache: RedisCacheService
     ) {}
 
     /**
@@ -136,41 +141,18 @@ export class DispatchService {
     }
 
     async listTripsForCompany(companyId: string, query: ListTripsQueryDto) {
-        const page = query.page ?? 1;
-        const pageSize = query.pageSize ?? 20;
-
-        const trips = await this.tripRepo.find({
-            where: { companyId },
-            relations: { stops: { order: true } },
-            order: { createdAt: "DESC" }
-        });
-
-        let filtered = trips;
-
+        // Free-text search is inherently low-reuse — caching it would fill
+        // Redis with one-off keys nobody hits twice. Only the common,
+        // repeatedly-requested views (unfiltered / status-only) are cached.
         if (query.search) {
-            const q = query.search.toLowerCase();
-            filtered = filtered.filter(trip =>
-                trip.stops.some(
-                    stop =>
-                        // BUG FIX: same orderReference issue removed here.
-                        stop.order.trackingNumber.toLowerCase().includes(q) ||
-                        stop.order.customerName.toLowerCase().includes(q)
-                )
-            );
+            return this.computeTripsList(companyId, query);
         }
 
-        if (query.status) {
-            filtered = filtered.filter(
-                trip => deriveTripStatus(trip.stops) === query.status
-            );
-        }
-
-        const total = filtered.length;
-        const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
-
-        return { trips: paged, total, page, pageSize };
+        const cacheKey = this.buildTripsListCacheKey(companyId, query);
+        return this.cache.getOrSet(cacheKey, 10, () =>
+            this.computeTripsList(companyId, query)
+        );
     }
-
     /**
      * Driver has reached this stop and picked up the order. Walks the order
      * through ASSIGNED -> PICKED_UP -> IN_TRANSIT via OrdersService, then
@@ -413,5 +395,69 @@ export class DispatchService {
                 manager
             );
         }
+    }
+
+    private async computeTripsList(
+        companyId: string,
+        query: ListTripsQueryDto
+    ) {
+        const page = query.page ?? 1;
+        const pageSize = query.pageSize ?? 20;
+
+        const trips = await this.tripRepo.find({
+            where: { companyId },
+            relations: { stops: { order: true } },
+            order: { createdAt: "DESC" }
+        });
+
+        let filtered = trips;
+
+        if (query.status) {
+            filtered = filtered.filter(
+                trip => deriveTripStatus(trip.stops) === query.status
+            );
+        }
+
+        const total = filtered.length;
+        const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
+
+        return { trips: paged, total, page, pageSize };
+    }
+
+    private buildTripsListCacheKey(
+        companyId: string,
+        query: ListTripsQueryDto
+    ): string {
+        return `trips:list:${companyId}:${query.status ?? ""}:${
+            query.page ?? 1
+        }:${query.pageSize ?? 20}`;
+    }
+
+    /**
+     * Actively invalidates on every trip-affecting event — the short 10s TTL
+     * alone isn't tight enough given how frequently trip state changes
+     * (every arrive/complete/skip), so staleness is bounded by whichever
+     * comes first: this invalidation, or the TTL. Only the exact status-keyed
+     * variants are cleared (page/pageSize combinations aren't enumerated
+     * individually — a stale page-2 entry simply expires via its own TTL,
+     * which is an acceptable few-seconds staleness for a less commonly hit
+     * page, versus enumerating every page/size combination on every event).
+     */
+    @OnEvent(TRIP_EVENTS.UPDATED)
+    async handleTripUpdated(event: TripUpdatedEvent) {
+        const statusVariants = [
+            undefined,
+            TripStatus.SCHEDULED,
+            TripStatus.IN_PROGRESS,
+            TripStatus.COMPLETED
+        ];
+        const keys = statusVariants.map(status =>
+            this.buildTripsListCacheKey(event.companyId, {
+                status,
+                page: 1,
+                pageSize: 20
+            } as ListTripsQueryDto)
+        );
+        await this.cache.del(...keys);
     }
 }

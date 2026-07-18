@@ -45,11 +45,13 @@ export class OrdersController {
         @Query() query: ListOrdersQueryDto
     ) {
         const userRole = await this.usersService.getUserRoleByUserId(user.id);
-        return this.ordersService.listOrdersForCompany(
+        return this.ordersService.listOrdersForCompanyCached(
             userRole.companyId,
             query
         );
     }
+
+
 
     @Get(":orderId")
     async findOrder(
@@ -105,6 +107,6 @@ export class OrdersController {
             orderId,
             userRole.companyId
         );
-        return {success:true}
+        return { success: true };
     }
 }

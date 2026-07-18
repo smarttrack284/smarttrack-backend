@@ -79,6 +79,12 @@ export class TeamController {
             query
         );
     }
+    @UseGuards(SupabaseAuthGuard)
+    @Get("drivers/available")
+    async listAvailableDrivers(@CurrentUser() user: AuthenticatedUser) {
+        const userRole = await this.usersService.getUserRoleByUserId(user.id);
+        return this.teamService.listAvailableDrivers(userRole.companyId);
+    }
 
     @UseGuards(SupabaseAuthGuard)
     @Delete(":memberId/invite")

@@ -32,6 +32,9 @@ import {
     TeamSortKey
 } from "./dto/list-team-members.query.dto";
 
+import { TripStop } from "#/common/entities/trip-stop.entity";
+import { StopStatus } from "#/common/constants/stop-status.constant";
+
 const MANAGER_ROLES = new Set<TeamRoleType>([
     TeamRoleType.OWNER,
     TeamRoleType.ADMIN
@@ -53,7 +56,9 @@ export class TeamService {
         private readonly usageService: UsageService,
         private readonly mailService: MailService,
         private readonly config: ConfigService,
-        @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient
+        @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+        @InjectRepository(TripStop)
+        private readonly tripStopRepo: Repository<TripStop>
     ) {}
 
     async inviteMember(
@@ -405,6 +410,49 @@ export class TeamService {
         invite.inviteTokenHash = null;
         invite.inviteTokenExpiresAt = null;
         return this.userRoleRepo.save(invite);
+    }
+
+    /**
+     * A driver is "available" if they're an ACTIVE team member with role
+     * DRIVER and have zero unresolved (pending/arrived) stops across any
+     * trip right now — mirrors the frontend's DriverPicker, which only lets
+     * dispatchers select drivers with no unresolved work in progress.
+     *
+     * Deliberately NOT cached — driver availability needs to be correct at
+     * the exact moment of dispatch (assigning a busy driver a second trip is
+     * a real operational mistake), so this always reads live. Contrast with
+     * listTrips below, where a few seconds of staleness on a read-heavy list
+     * view is an acceptable tradeoff; here it isn't.
+     */
+    async listAvailableDrivers(companyId: string): Promise<UserRole[]> {
+        const drivers = await this.userRoleRepo.find({
+            where: {
+                companyId,
+                role: TeamRoleType.DRIVER,
+                status: TeamMemberStatus.ACTIVE
+            }
+        });
+        if (drivers.length === 0) return [];
+
+        const driverUserIds = drivers
+            .map(d => d.userId)
+            .filter((id): id is string => !!id);
+
+        const busyDriverIds = await this.tripStopRepo
+            .createQueryBuilder("stop")
+            .innerJoin("stop.trip", "trip")
+            .select("DISTINCT trip.driverUserId", "driverUserId")
+            .where("trip.companyId = :companyId", { companyId })
+            .andWhere("trip.driverUserId IN (:...driverUserIds)", {
+                driverUserIds
+            })
+            .andWhere("stop.status IN (:...statuses)", {
+                statuses: [StopStatus.PENDING, StopStatus.ARRIVED]
+            })
+            .getRawMany<{ driverUserId: string }>();
+
+        const busySet = new Set(busyDriverIds.map(r => r.driverUserId));
+        return drivers.filter(d => d.userId && !busySet.has(d.userId));
     }
 
     private async withTransaction<T>(
