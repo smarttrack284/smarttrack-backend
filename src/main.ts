@@ -4,6 +4,7 @@ import { FastifyAdapter, NestFastifyApplication, } from '@nestjs/platform-fastif
 import helmet from '@fastify/helmet';
 import compress from '@fastify/compress';
 import cookie from '@fastify/cookie';
+import multipart from '@fastify/multipart';
 
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from '#/common/filters/global-filter.filter';
@@ -27,6 +28,10 @@ async function bootstrap() {
   // Cookie support
   await app.register(cookie, {
     secret: process.env.COOKIE_SECRET,
+  });
+
+  await app.register(multipart, {
+    limits: { fileSize: 5 * 1024 * 1024 }, // matches FileValidationPipe's ceiling — belt-and-suspenders, Fastify rejects an oversized stream before it's even fully buffered
   });
 
   // Global API prefix

@@ -19,7 +19,7 @@ export type PlanLimits = {
 
 /**
  * MVP-level plan definitions — mirrors the same three-tier shape as the
- * frontend's earlier billing mock (plans array in use-billing.ts), just
+ * frontend's earlier billing mock (plans array in use-billing-overview.ts), just
  * renamed to match the actual product tiers (free/starter/pro) rather than
  * the placeholder (starter/growth/scale) used there. Numbers here are a
  * reasonable MVP starting point, not confirmed pricing — revisit once

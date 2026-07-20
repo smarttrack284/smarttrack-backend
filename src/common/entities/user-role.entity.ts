@@ -5,30 +5,27 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
+  OneToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { TeamRoleType } from '#/common/types/team-role.type';
 import { TeamMemberStatus } from '#/common/constants/team-member-status.constant';
 import { Company } from '#/common/entities/company.entity';
+import { NotificationSetting } from './notification-setting.entity';
 
 @Entity('user_roles')
-@Index(['email', 'companyId'], { unique: true }) // one membership/invite per email per company
 export class UserRole {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  /**
-   * Null until the invited person actually signs up and the invite is
-   * accepted (see TeamService.acceptPendingInvite) — an invite can exist
-   * as a row with no linked Supabase account yet. Email, not userId, is
-   * the stable identifier for a membership from the moment it's created.
-   */
-  @Column({ name: 'user_id', type: 'uuid', nullable: true })
+  // ✅ Ensured UNIQUE so a user can only ever have one role record in the entire system
+  @Column({ name: 'user_id', type: 'uuid', nullable: true, unique: true })
   @Index()
   userId: string | null;
 
-  @Column({ type: 'varchar', length: 255 })
+  // ✅ Ensured UNIQUE so an email can only be associated with one company role system-wide
+  @Column({ type: 'varchar', length: 255, unique: true })
   email: string;
 
   @Column({ name: 'company_id', type: 'uuid' })
@@ -38,6 +35,10 @@ export class UserRole {
   @ManyToOne(() => Company, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'company_id' })
   company: Company;
+
+  // ✅ Clean inverse OneToOne mapping back to notification preferences
+  @OneToOne(() => NotificationSetting, (settings) => settings.userRole)
+  notificationSettings: NotificationSetting;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   name: string | null;

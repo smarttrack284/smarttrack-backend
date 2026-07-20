@@ -15,6 +15,10 @@ import { APP_GUARD } from '@nestjs/core';
 import { RateLimitModule } from '#/common/rate-limit/rate-limit.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { OverviewModule } from '#/modules/overview/overview.module';
+import { AnalyticsModule } from '#/modules/analytics/analytics.module';
+import { CacheModule } from '#/common/cache/cache.module';
+import { StorageModule } from '#/common/storage/storage.module';
+import { BillingModule } from '#/modules/billing/billing.module';
 
 @Module({
   imports: [
@@ -22,7 +26,9 @@ import { OverviewModule } from '#/modules/overview/overview.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
-    EventEmitterModule,
+    EventEmitterModule.forRoot(),
+    StorageModule,
+    CacheModule,
     RateLimitModule,
     SupabaseModule,
     AuthCoreModule,
@@ -33,6 +39,8 @@ import { OverviewModule } from '#/modules/overview/overview.module';
     TeamModule,
     TrackingModule,
     OverviewModule,
+    AnalyticsModule,
+    BillingModule,
   ],
 
   controllers: [AppController],

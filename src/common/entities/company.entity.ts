@@ -3,11 +3,9 @@ import {
   CreateDateColumn,
   Entity,
   OneToMany,
-  OneToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { NotificationSetting } from './notification-setting.entity';
 import { SavedLocation } from './saved-location.entity';
 import { ApiKey } from './api-key.entity';
 
@@ -36,11 +34,6 @@ export class Company {
     name: 'logo_url',
   })
   logoUrl: string | null;
-
-  // Integration point: each concern lives in its own entity/table, related
-  // back to Company rather than flattened into one wide settings table.
-  @OneToOne(() => NotificationSetting, (settings) => settings.company)
-  notificationSettings: NotificationSetting;
 
   @OneToMany(() => SavedLocation, (location) => location.company)
   savedLocations: SavedLocation[];

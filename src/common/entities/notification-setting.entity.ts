@@ -6,13 +6,7 @@ import {
   OneToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import { Company } from './company.entity';
-
-export enum DigestFrequency {
-  OFF = 'off',
-  DAILY = 'daily',
-  WEEKLY = 'weekly',
-}
+import { UserRole } from '#/common/entities/user-role.entity';
 
 @Entity('notification_settings')
 export class NotificationSetting {
@@ -20,18 +14,19 @@ export class NotificationSetting {
   id: string;
 
   @Column({
-    name: 'company_id',
+    name: 'user_id',
     type: 'uuid',
-    unique: true, // one settings row per company — enforced at the DB level, not just app logic
+    unique: true,
   })
   @Index()
-  companyId: string;
+  userId: string; // Holds the global Supabase user UUID
 
-  @OneToOne(() => Company, {
+  // ✅ Map directly to the unique user_id column property inside UserRole
+  @OneToOne(() => UserRole, (userRole) => userRole.notificationSettings, {
     onDelete: 'CASCADE',
   })
-  @JoinColumn({ name: 'company_id' })
-  company: Company;
+  @JoinColumn({ name: 'user_id', referencedColumnName: 'userId' })
+  userRole: UserRole;
 
   // Order lifecycle
   @Column({ name: 'email_order_created', type: 'boolean', default: true })
@@ -51,41 +46,4 @@ export class NotificationSetting {
 
   @Column({ name: 'email_order_cancelled', type: 'boolean', default: true })
   emailOrderCancelled: boolean;
-
-  // Team & drivers
-  @Column({ name: 'email_driver_offline', type: 'boolean', default: false })
-  emailDriverOffline: boolean;
-
-  @Column({
-    name: 'email_team_invite_accepted',
-    type: 'boolean',
-    default: false,
-  })
-  emailTeamInviteAccepted: boolean;
-
-  // Security — intentionally not toggle-able off, shown as always-on
-  // (no column: this is enforced in the service layer, not a preference)
-
-  // Digest
-  @Column({
-    name: 'digest_frequency',
-    type: 'enum',
-    enum: DigestFrequency,
-    default: DigestFrequency.OFF,
-  })
-  digestFrequency: DigestFrequency;
-
-  // SMS
-  @Column({ name: 'sms_urgent_only', type: 'boolean', default: false })
-  smsUrgentOnly: boolean;
-
-  // Quiet hours
-  @Column({ name: 'quiet_hours_enabled', type: 'boolean', default: false })
-  quietHoursEnabled: boolean;
-
-  @Column({ name: 'quiet_hours_start', type: 'varchar', nullable: true })
-  quietHoursStart: string | null;
-
-  @Column({ name: 'quiet_hours_end', type: 'varchar', nullable: true })
-  quietHoursEnd: string | null;
 }
