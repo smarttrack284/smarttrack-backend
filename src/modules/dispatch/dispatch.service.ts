@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
 import { DataSource, EntityManager, Repository } from "typeorm";
 import { Trip } from "#/common/entities/trip.entity";
-import { TripStop } from "#/common/entities/trip-stop.entity";
+import { TripStop,ProofOfDeliveryMethod } from "#/common/entities/trip-stop.entity";
 import { StopStatus } from "#/common/constants/stop-status.constant";
 import { OrderStatus } from "#/common/constants/order-status.constant";
 import { TripStatus } from "#/common/constants/trip-status.constant";
@@ -26,6 +26,10 @@ import { ListTripsQueryDto } from "./dto/list-trips.query.dto";
 import { OnEvent } from "@nestjs/event-emitter";
 import { RedisCacheService } from "#/common/cache/redis-cache.service";
 import { TRIP_EVENTS, TripUpdatedEvent } from "#/common/events/trip.events";
+import { deriveTripActivity } from "#/common/utils/trip-activity.util";
+import { StorageService } from "#/common/storage/storage.service";
+import { StoragePath } from "#/common/storage/storage-path.util";
+import { CompleteStopDto } from "./dto/complete-stop.dto";
 
 @Injectable()
 export class DispatchService {
@@ -43,7 +47,8 @@ export class DispatchService {
         private readonly ordersService: OrdersService,
         private readonly usersService: UsersService,
         private readonly trackingService: TrackingService,
-        private readonly cache: RedisCacheService
+        private readonly cache: RedisCacheService,
+        private readonly storageService: StorageService
     ) {}
 
     /**
@@ -198,12 +203,72 @@ export class DispatchService {
         return savedStop;
     }
 
-    /** Driver has delivered this stop's order. Order goes IN_TRANSIT -> DELIVERED. Broadcasts after commit. */
+    /**
+     * Driver has delivered this stop's order. Order goes IN_TRANSIT ->
+     * DELIVERED. Now REQUIRES proof of delivery — a photo and/or signature,
+     * per podMethod. Files are uploaded BEFORE the transaction starts (same
+     * reasoning as CompaniesService.updateCompany's logo handling: a storage
+     * upload can't be rolled back by Postgres, so if it fails, nothing in the
+     * DB has been touched yet). Broadcasts after commit, unchanged.
+     */
     async completeStop(
         tripId: string,
         stopId: string,
-        companyId: string
+        companyId: string,
+        dto: CompleteStopDto,
+        files: {
+            photo?: { buffer: Buffer; contentType: string; extension: string };
+            signature?: {
+                buffer: Buffer;
+                contentType: string;
+                extension: string;
+            };
+        }
     ): Promise<TripStop> {
+        const requiresPhoto =
+            dto.podMethod === ProofOfDeliveryMethod.PHOTO ||
+            dto.podMethod === ProofOfDeliveryMethod.PHOTO_AND_SIGNATURE;
+        const requiresSignature =
+            dto.podMethod === ProofOfDeliveryMethod.SIGNATURE ||
+            dto.podMethod === ProofOfDeliveryMethod.PHOTO_AND_SIGNATURE;
+
+        if (requiresPhoto && !files.photo) {
+            throw new BadRequestAppException(
+                "A delivery photo is required for this proof-of-delivery method"
+            );
+        }
+        if (requiresSignature && !files.signature) {
+            throw new BadRequestAppException(
+                "A signature is required for this proof-of-delivery method"
+            );
+        }
+
+        let podPhotoUrl: string | undefined;
+        let podSignatureUrl: string | undefined;
+
+        if (files.photo) {
+            podPhotoUrl = await this.storageService.uploadFile({
+                path: StoragePath.proofOfDelivery(
+                    companyId,
+                    stopId,
+                    `photo.${files.photo.extension}`
+                ),
+                buffer: files.photo.buffer,
+                contentType: files.photo.contentType
+            });
+        }
+        if (files.signature) {
+            podSignatureUrl = await this.storageService.uploadFile({
+                path: StoragePath.proofOfDelivery(
+                    companyId,
+                    stopId,
+                    `signature.${files.signature.extension}`
+                ),
+                buffer: files.signature.buffer,
+                contentType: files.signature.contentType
+            });
+        }
+
         const savedStop = await this.withTransaction(undefined, async trx => {
             const { stop } = await this.getStopForCompany(
                 tripId,
@@ -233,6 +298,13 @@ export class DispatchService {
 
             stop.status = StopStatus.COMPLETED;
             stop.completedAt = new Date();
+            stop.podMethod = dto.podMethod;
+            stop.podPhotoUrl = podPhotoUrl ?? null;
+            stop.podSignatureUrl = podSignatureUrl ?? null;
+            stop.podRecipientName = dto.recipientName ?? null;
+            stop.podNotes = dto.notes ?? null;
+            stop.podCapturedAt = new Date();
+
             return trx.getRepository(TripStop).save(stop);
         });
 
@@ -303,8 +375,8 @@ export class DispatchService {
                 id: stop.id,
                 sequence: stop.sequence,
                 orderId: stop.orderId,
-                // BUG FIX: orderReference removed — not a real field.
                 trackingNumber: stop.order.trackingNumber,
+                orderReference: stop.order.orderReference,
                 customerName: stop.order.customerName,
                 customerPhone: stop.order.customerPhone,
                 pickupLocation: stop.order.pickupLocation,
@@ -315,8 +387,15 @@ export class DispatchService {
                 arrivedAt: stop.arrivedAt,
                 completedAt: stop.completedAt,
                 skipReason: stop.skipReason,
-                skipNote: stop.skipNote
-            }))
+                skipNote: stop.skipNote,
+                podMethod: stop.podMethod,
+                podPhotoUrl: stop.podPhotoUrl,
+                podSignatureUrl: stop.podSignatureUrl,
+                podRecipientName: stop.podRecipientName,
+                podNotes: stop.podNotes,
+                podCapturedAt: stop.podCapturedAt
+            })),
+            activity: deriveTripActivity(trip)
         };
     }
 

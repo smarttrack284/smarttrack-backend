@@ -7,7 +7,8 @@ import {
     Patch,
     Post,
     Query,
-    UseGuards
+    UseGuards,
+    Req
 } from "@nestjs/common";
 import { SupabaseAuthGuard } from "#/common/guards/supabase-auth.guard";
 import { CurrentUser } from "#/common/decorators/current-user.decorator";
@@ -16,7 +17,10 @@ import { UsersService } from "#/modules/users/users.service";
 import { DispatchService } from "./dispatch.service";
 import { DispatchOrdersDto } from "./dto/dispatch-orders.dto";
 import { SkipStopDto } from "./dto/skip-stop.dto";
+import { CompleteStopDto } from "./dto/complete-stop.dto";
 import { ListTripsQueryDto } from "./dto/list-trips.query.dto";
+import { FileValidationPipe } from "#/common/pipes/file-validation.pipe";
+import type { FastifyRequest } from "fastify";
 
 @UseGuards(SupabaseAuthGuard)
 @Controller("dispatch/trips")
@@ -32,7 +36,7 @@ export class DispatchController {
         @Body() dto: DispatchOrdersDto
     ) {
         const userRole = await this.usersService.getUserRoleByUserId(user.id);
-        
+
         await this.dispatchService.dispatchOrdersToDriver(
             userRole.companyId,
             user.id,
@@ -92,17 +96,54 @@ export class DispatchController {
         );
     }
 
-    @Patch(":tripId/stops/:stopId/complete")
+    @Post(":tripId/stops/:stopId/complete")
     async completeStop(
         @CurrentUser() user: AuthenticatedUser,
         @Param("tripId", ParseUUIDPipe) tripId: string,
-        @Param("stopId", ParseUUIDPipe) stopId: string
+        @Param("stopId", ParseUUIDPipe) stopId: string,
+        @Req() request: FastifyRequest
     ) {
         const userRole = await this.usersService.getUserRoleByUserId(user.id);
+
+        const parts = request.parts();
+        let dto: Partial<CompleteStopDto> = {};
+        const files: {
+            photo?: { buffer: Buffer; contentType: string; extension: string };
+            signature?: {
+                buffer: Buffer;
+                contentType: string;
+                extension: string;
+            };
+        } = {};
+
+        for await (const part of parts) {
+            if (
+                part.type === "file" &&
+                (part.fieldname === "photo" || part.fieldname === "signature")
+            ) {
+                const buffer = await part.toBuffer();
+                const validated = new FileValidationPipe().transform({
+                    file: part,
+                    buffer
+                });
+                const extension =
+                    validated.file.filename.split(".").pop() ?? "jpg";
+                files[part.fieldname as "photo" | "signature"] = {
+                    buffer: validated.buffer,
+                    contentType: validated.file.mimetype,
+                    extension
+                };
+            } else if (part.type === "field") {
+                (dto as Record<string, unknown>)[part.fieldname] = part.value;
+            }
+        }
+
         return this.dispatchService.completeStop(
             tripId,
             stopId,
-            userRole.companyId
+            userRole.companyId,
+            dto as CompleteStopDto,
+            files
         );
     }
 

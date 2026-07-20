@@ -11,9 +11,17 @@
  * every category automatically without needing to know about each one.
  */
 export const StoragePath = {
-  companyRoot: (companyId: string) => `companies/${companyId}`,
-  companyLogo: (companyId: string, filename: string) =>
-    `companies/${companyId}/logo/${filename}`,
-  userAvatar: (companyId: string, userId: string, filename: string) =>
-    `companies/${companyId}/users/${userId}/avatar/${filename}`,
+    companyRoot: (companyId: string) => `companies/${companyId}`,
+    
+    companyLogo: (companyId: string, filename: string) =>
+        `companies/${companyId}/logo/${filename}`,
+        
+    userAvatar: (companyId: string, userId: string, filename: string) =>
+        `companies/${companyId}/users/${userId}/avatar/${filename}`,
+        
+    proofOfDelivery: (
+        companyId: string,
+        tripStopId: string,
+        filename: string
+    ) => `companies/${companyId}/pod/${tripStopId}/${filename}`
 } as const;

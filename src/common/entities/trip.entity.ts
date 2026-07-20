@@ -12,6 +12,7 @@ import {
 import { Company } from "./company.entity";
 import { TripStop } from "./trip-stop.entity";
 
+
 @Entity("trips")
 @Index(["companyId", "driverUserId"])
 export class Trip {

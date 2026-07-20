@@ -25,6 +25,7 @@ import { UpdateDriverLocationDto } from './dto/update-driver-location.dto';
 import { TRACKING_QUEUE_NAME, TrackingJobName, } from './constants/tracking-queue.constant';
 import { TRIP_EVENTS, TripUpdatedEvent } from '#/common/events/trip.events';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { deriveTripActivity } from '#/common/utils/trip-activity.util';
 
 export type LocationUpdateResult =
   | { accepted: true }
@@ -307,7 +308,14 @@ export class TrackingService {
         completedAt: stop.completedAt,
         skipReason: stop.skipReason,
         skipNote: stop.skipNote,
+        podMethod: stop.podMethod,
+            podPhotoUrl: stop.podPhotoUrl,
+            podSignatureUrl: stop.podSignatureUrl,
+            podRecipientName: stop.podRecipientName,
+            podNotes: stop.podNotes,
+            podCapturedAt: stop.podCapturedAt
       })),
+      activity: deriveTripActivity(trip),
     };
   }
 
