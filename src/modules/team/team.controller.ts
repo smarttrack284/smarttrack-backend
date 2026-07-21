@@ -20,9 +20,7 @@ import { ChangeRoleDto } from "./dto/change-role.dto";
 import { ListTeamMembersQueryDto } from "./dto/list-team-members.query.dto";
 import { AcceptInviteDto } from "#/modules/team/dto/accept-invite.dto";
 
-const user = {
-    id: "d141a507-5cd4-4dfc-8009-0e6ce1cf2524"
-};
+
 @Controller("team")
 export class TeamController {
     constructor(
@@ -83,7 +81,7 @@ export class TeamController {
     @Get("drivers/available")
     async listAvailableDrivers(@CurrentUser() user: AuthenticatedUser) {
         const userRole = await this.usersService.getUserRoleByUserId(user.id);
-        return this.teamService.listAvailableDrivers(userRole.companyId);
+        return this.teamService.listAvailableDriversForCompany(userRole.companyId);
     }
 
     @UseGuards(SupabaseAuthGuard)

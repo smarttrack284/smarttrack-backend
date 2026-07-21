@@ -1,8 +1,11 @@
 import { Injectable } from "@nestjs/common";
 import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
-import { DataSource, EntityManager, Repository } from "typeorm";
+import { DataSource, EntityManager, Repository, In } from "typeorm";
 import { Trip } from "#/common/entities/trip.entity";
-import { TripStop,ProofOfDeliveryMethod } from "#/common/entities/trip-stop.entity";
+import {
+    TripStop,
+    ProofOfDeliveryMethod
+} from "#/common/entities/trip-stop.entity";
 import { StopStatus } from "#/common/constants/stop-status.constant";
 import { OrderStatus } from "#/common/constants/order-status.constant";
 import { TripStatus } from "#/common/constants/trip-status.constant";
@@ -30,6 +33,13 @@ import { deriveTripActivity } from "#/common/utils/trip-activity.util";
 import { StorageService } from "#/common/storage/storage.service";
 import { StoragePath } from "#/common/storage/storage-path.util";
 import { CompleteStopDto } from "./dto/complete-stop.dto";
+import { UserRole } from "#/common/entities/user-role.entity";
+
+type TripDriver = {
+    id: string;
+    driverName: string;
+    avatarUrl: string | null;
+};
 
 @Injectable()
 export class DispatchService {
@@ -45,6 +55,8 @@ export class DispatchService {
         @InjectRepository(TripStop)
         private readonly tripStopRepo: Repository<TripStop>,
         private readonly ordersService: OrdersService,
+        @InjectRepository(UserRole)
+        private readonly userRoleRepo: Repository<UserRole>,
         private readonly usersService: UsersService,
         private readonly trackingService: TrackingService,
         private readonly cache: RedisCacheService,
@@ -146,13 +158,9 @@ export class DispatchService {
     }
 
     async listTripsForCompany(companyId: string, query: ListTripsQueryDto) {
-        // Free-text search is inherently low-reuse — caching it would fill
-        // Redis with one-off keys nobody hits twice. Only the common,
-        // repeatedly-requested views (unfiltered / status-only) are cached.
         if (query.search) {
             return this.computeTripsList(companyId, query);
         }
-
         const cacheKey = this.buildTripsListCacheKey(companyId, query);
         return this.cache.getOrSet(cacheKey, 10, () =>
             this.computeTripsList(companyId, query)
@@ -362,21 +370,43 @@ export class DispatchService {
         return savedStop;
     }
 
-    toTripResponse(trip: Trip) {
+    /** Convenience used by TripsGateway — computes the trip list AND resolves driver names in one call, so the gateway doesn't need to know about UserRole at all. */
+    async listTripsForCompanyWithDriverNames(
+        companyId: string,
+        query: ListTripsQueryDto
+    ) {
+        const result = await this.listTripsForCompany(companyId, query);
+
+        const drivers = await this.getDriversForTrips(companyId, result.trips);
+
+        return {
+            ...result,
+            trips: result.trips.map(trip =>
+                this.toTripResponse(
+                    trip,
+                    drivers.get(trip.driverUserId) ?? null
+                )
+            )
+        };
+    }
+
+    toTripResponse(trip: Trip, driver: TripDriver | null = null) {
         return {
             id: trip.id,
             driverUserId: trip.driverUserId,
+            driver,
             createdAt: trip.createdAt,
             startedAt: trip.startedAt,
             status: deriveTripStatus(trip.stops),
             progress: getTripProgress(trip.stops),
             currentStop: getCurrentStop(trip.stops),
+            activity: deriveTripActivity(trip),
             stops: trip.stops.map(stop => ({
                 id: stop.id,
                 sequence: stop.sequence,
                 orderId: stop.orderId,
-                trackingNumber: stop.order.trackingNumber,
                 orderReference: stop.order.orderReference,
+                trackingNumber: stop.order.trackingNumber,
                 customerName: stop.order.customerName,
                 customerPhone: stop.order.customerPhone,
                 pickupLocation: stop.order.pickupLocation,
@@ -387,15 +417,8 @@ export class DispatchService {
                 arrivedAt: stop.arrivedAt,
                 completedAt: stop.completedAt,
                 skipReason: stop.skipReason,
-                skipNote: stop.skipNote,
-                podMethod: stop.podMethod,
-                podPhotoUrl: stop.podPhotoUrl,
-                podSignatureUrl: stop.podSignatureUrl,
-                podRecipientName: stop.podRecipientName,
-                podNotes: stop.podNotes,
-                podCapturedAt: stop.podCapturedAt
-            })),
-            activity: deriveTripActivity(trip)
+                skipNote: stop.skipNote
+            }))
         };
     }
 
@@ -510,6 +533,54 @@ export class DispatchService {
         return `trips:list:${companyId}:${query.status ?? ""}:${
             query.page ?? 1
         }:${query.pageSize ?? 20}`;
+    }
+
+    /** Batch-resolves driverUserId -> name for a page of trips in ONE query*/
+    private async getDriversForTrips(
+        companyId: string,
+        trips: Trip[]
+    ): Promise<
+        Map<
+            string,
+            {
+                id: string;
+                driverName: string;
+                avatarUrl: string | null;
+            }
+        >
+    > {
+        const driverIds = [...new Set(trips.map(t => t.driverUserId))];
+
+        if (driverIds.length === 0) {
+            return new Map();
+        }
+
+        const drivers = await this.userRoleRepo.find({
+            where: {
+                companyId,
+                userId: In(driverIds)
+            },
+            select: {
+                userId: true,
+                name: true
+            }
+        });
+
+        const results = await Promise.all(
+            drivers.map(async driver => {
+                const user = await this.usersService.getUserFromSupabase(
+                    driver.userId
+                );
+
+                return {
+                    id: driver.userId,
+                    driverName: driver.name,
+                    avatarUrl: user.user_metadata?.avatar_url ?? null
+                };
+            })
+        );
+
+        return new Map(results.map(driver => [driver.id, driver]));
     }
 
     /**
