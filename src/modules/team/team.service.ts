@@ -27,7 +27,10 @@ import { MailTemplate } from '#/modules/mail/interfaces/mail-template.interface'
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { ChangeRoleDto } from './dto/change-role.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
-import { ListTeamMembersQueryDto, TeamSortKey, } from './dto/list-team-members.query.dto';
+import {
+  ListTeamMembersQueryDto,
+  TeamSortKey,
+} from './dto/list-team-members.query.dto';
 
 import { TripStop } from '#/common/entities/trip-stop.entity';
 import { StopStatus } from '#/common/constants/stop-status.constant';
@@ -130,6 +133,11 @@ export class TeamService {
       savedInvite.plainToken,
       inviter?.name ?? 'A teammate',
     );
+  }
+
+  async getDriverByIdForCompany(companyId: string, userId: string | null) {
+    if (!userId) return null;
+    return await this.userRoleRepo.findOne({ where: { userId, companyId } });
   }
 
   async listTeamMembersForCompany(

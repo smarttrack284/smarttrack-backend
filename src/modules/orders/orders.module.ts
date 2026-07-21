@@ -9,12 +9,15 @@ import { OrdersController } from './orders.controller';
 import { OrdersEmitterService } from './orders-emitter.service';
 import { OrdersSubscriptionRegistry } from './orders-subscription-registry.service';
 import { OrdersGateway } from '#/modules/orders/orders.gateway';
+import { UserRole } from '#/common/entities/user-role.entity';
+import { TeamModule } from '#/modules/team/team.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Order, OrderItem]),
+    TypeOrmModule.forFeature([Order, OrderItem, UserRole]),
     UsageModule,
     UsersModule,
+    TeamModule,
   ],
   controllers: [OrdersController],
   providers: [
