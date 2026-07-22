@@ -19,4 +19,4 @@ export interface EmailProvider {
   sendEmail(input: SendEmailInput): Promise<SendEmailResult>;
 }
 
-export const EMAIL_PROVIDER = Symbol('EMAIL_PROVIDER');
+export const RESEND_EMAIL_PROVIDER = Symbol('RESEND_EMAIL_PROVIDER');

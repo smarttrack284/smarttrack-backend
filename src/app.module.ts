@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CompaniesModule } from '#/modules/companies/companies.module';
 import { UsersModule } from '#/modules/users/users.module';
 import { SupabaseModule } from '#/common/supabase/supabase.module';
@@ -19,6 +19,8 @@ import { AnalyticsModule } from '#/modules/analytics/analytics.module';
 import { CacheModule } from '#/common/cache/cache.module';
 import { StorageModule } from '#/common/storage/storage.module';
 import { BillingModule } from '#/modules/billing/billing.module';
+import { MailModule } from '#/modules/mail/mail.module';
+import { BullModule } from '@nestjs/bullmq';
 
 @Module({
   imports: [
@@ -26,8 +28,18 @@ import { BillingModule } from '#/modules/billing/billing.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        connection: {
+          url: config.get<string>('REDIS_URL'),
+        },
+      }),
+    }),
     EventEmitterModule.forRoot(),
     StorageModule,
+    MailModule,
     CacheModule,
     RateLimitModule,
     SupabaseModule,

@@ -1,17 +1,10 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Logger } from '@nestjs/common';
 import type { Job } from 'bullmq';
-import {
-  EMAIL_PROVIDER,
-  type EmailProvider,
-} from './interfaces/email-provider.interface';
+import { type EmailProvider, RESEND_EMAIL_PROVIDER, } from './interfaces/email-provider.interface';
 import { MailTemplateService } from './mail-template.service';
 import { MailTemplate } from './interfaces/mail-template.interface';
-import {
-  MAIL_QUEUE_NAME,
-  MailJobName,
-  type SendTemplateEmailJobData,
-} from './constants/mail-queue.constant';
+import { MAIL_QUEUE_NAME, MailJobName, type SendTemplateEmailJobData, } from './constants/mail-queue.constant';
 
 /**
  * The actual sender. Concurrency is capped via @Processor's `concurrency`
@@ -29,7 +22,8 @@ export class MailProcessor extends WorkerHost {
   private readonly logger = new Logger(MailProcessor.name);
 
   constructor(
-    @Inject(EMAIL_PROVIDER) private readonly emailProvider: EmailProvider,
+    @Inject(RESEND_EMAIL_PROVIDER)
+    private readonly resendEmailProvider: EmailProvider,
     private readonly templateService: MailTemplateService,
   ) {
     super();
@@ -39,12 +33,17 @@ export class MailProcessor extends WorkerHost {
     if (job.name !== MailJobName.SEND_TEMPLATE_EMAIL) return;
 
     const { to, subject, templateName, context } = job.data;
+
     const html = this.templateService.render(
       templateName as MailTemplate,
       context as never,
     );
 
-    const result = await this.emailProvider.sendEmail({ to, subject, html });
+    const result = await this.resendEmailProvider.sendEmail({
+      to,
+      subject,
+      html,
+    });
     this.logger.log(
       `Sent "${templateName}" to ${to} (provider id: ${result.providerMessageId})`,
     );
