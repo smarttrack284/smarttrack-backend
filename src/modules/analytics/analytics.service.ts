@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Order } from "#/common/entities/order.entity";
@@ -9,11 +9,12 @@ import { StopStatus } from "#/common/constants/stop-status.constant";
 import { RedisCacheService } from "#/common/cache/redis-cache.service";
 import { UsersService } from "#/modules/users/users.service";
 import { AnalyticsQueryDto } from "./dto/analytics-query.dto";
-
+import {InternalErrorException} from "#/common/exceptions"
 const ANALYTICS_TTL_SECONDS = 60; // analytics is inherently retrospective, not live — a full minute of staleness is a fine tradeoff for materially fewer expensive aggregate queries
 
 @Injectable()
 export class AnalyticsService {
+    private readonly logger: Logger = new Logger(AnalyticsService.name);
     constructor(
         @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
         @InjectRepository(TripStop)
@@ -24,24 +25,57 @@ export class AnalyticsService {
         private readonly usersService: UsersService
     ) {}
 
+    /**
+     * Retrieves analytics for a company within the requested date range.
+     *
+     * Analytics are cached for a short period to reduce database load and
+     * improve response times. If no cached data exists, the analytics are
+     * computed and stored in the cache before being returned.
+     *
+     * @param companyId - The unique identifier of the company.
+     * @param query - The analytics query containing the requested date range.
+     *
+     * @returns A summary of analytics, trend data, status breakdown, and top drivers.
+     *
+     * @throws {InternalErrorException}
+     * If the analytics could not be retrieved.
+     */
     async getAnalytics(companyId: string, query: AnalyticsQueryDto) {
-        const range = this.resolveDateRange(query);
-        const cacheKey = `analytics:${companyId}:${range.from.toISOString()}:${range.to.toISOString()}`;
+        try {
+            const range = this.resolveDateRange(query);
 
-        return this.cache.getOrSet(
-            cacheKey,
-            ANALYTICS_TTL_SECONDS,
-            async () => {
-                const [summary, trend, statusBreakdown, topDrivers] =
-                    await Promise.all([
-                        this.computeSummary(companyId, range),
-                        this.computeTrend(companyId, range),
-                        this.computeStatusBreakdown(companyId, range),
-                        this.computeTopDrivers(companyId, range)
-                    ]);
-                return { summary, trend, statusBreakdown, topDrivers };
-            }
-        );
+            const cacheKey = `analytics:${companyId}:${range.from.toISOString()}:${range.to.toISOString()}`;
+
+            return this.cache.getOrSet(
+                cacheKey,
+                ANALYTICS_TTL_SECONDS,
+                async () => {
+                    const [summary, trend, statusBreakdown, topDrivers] =
+                        await Promise.all([
+                            this.computeSummary(companyId, range),
+                            this.computeTrend(companyId, range),
+                            this.computeStatusBreakdown(companyId, range),
+                            this.computeTopDrivers(companyId, range)
+                        ]);
+
+                    return {
+                        summary,
+                        trend,
+                        statusBreakdown,
+                        topDrivers
+                    };
+                }
+            );
+        } catch (error) {
+            this.logger.error(
+                `Failed to retrieve analytics for company ${companyId}.`,
+                error
+            );
+
+            throw new InternalErrorException(
+                "We couldn't load your analytics at the moment. Please try again."
+            );
+        }
     }
 
     /** Defaults to the last 14 days if no range given — matches the frontend's AnalyticsToolbar default label ("Last 14 days"). */

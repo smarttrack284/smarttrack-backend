@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
 import { ConfigService } from "@nestjs/config";
 import { DataSource, EntityManager, Repository } from "typeorm";
@@ -36,6 +36,8 @@ import {
 import { TripStop } from "#/common/entities/trip-stop.entity";
 import { StopStatus } from "#/common/constants/stop-status.constant";
 import { NotificationSetting } from "#/common/entities/notification-setting.entity";
+import { StorageService } from "#/common/storage/storage.service";
+import { StoragePath } from "#/common/storage/storage-path.util";
 
 const MANAGER_ROLES = new Set<TeamRoleType>([
     TeamRoleType.OWNER,
@@ -51,6 +53,7 @@ const ROLE_LABELS: Record<TeamRoleType, string> = {
 
 @Injectable()
 export class TeamService {
+    private readonly logger: Logger = new Logger(TeamService.name);
     constructor(
         @InjectDataSource() private readonly dataSource: DataSource,
         @InjectRepository(UserRole)
@@ -58,6 +61,7 @@ export class TeamService {
         private readonly usageService: UsageService,
         private readonly usersService: UsersService,
         private readonly mailService: MailService,
+        private readonly storageService: StorageService,
         private readonly config: ConfigService,
         @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
         @InjectRepository(TripStop)
@@ -66,6 +70,27 @@ export class TeamService {
         private readonly notificationRepo: Repository<NotificationSetting>
     ) {}
 
+    /**
+     * Invites a new member to a company team.
+     *
+     * Validates that the acting user has permission to invite members, ensures the
+     * invited email is not already associated with another membership, creates an
+     * invitation record, and sends the invitation email after the transaction
+     * completes successfully.
+     *
+     * @param companyId - The unique identifier of the company.
+     * @param actingUserId - The unique identifier of the user sending the invite.
+     * @param dto - The invitation details including email and assigned role.
+     *
+     * @returns void after the invitation has been created and sent.
+     *
+     * @throws {ForbiddenAppException}
+     * If the acting user does not have permission to invite members.
+     *
+     * @throws {ResourceConflictException}
+     * If the email has already been invited, is already a member, or cannot be
+     * invited due to an existing membership.
+     */
     async inviteMember(
         companyId: string,
         actingUserId: string,
@@ -84,7 +109,7 @@ export class TeamService {
             const userRoleRepo = trx.getRepository(UserRole);
 
             /**
-             * Check if this email already belongs to any company.
+             * Check whether the email already has an existing membership.
              */
             const existingMembership = await userRoleRepo.findOne({
                 where: {
@@ -95,12 +120,12 @@ export class TeamService {
             if (existingMembership) {
                 if (existingMembership.companyId === companyId) {
                     throw new ResourceConflictException(
-                        "This user is already a member or has already been invited to this company."
+                        "This person has already been invited or is already a member of your team."
                     );
                 }
 
                 throw new ResourceConflictException(
-                    "This user already belongs to another company and cannot be invited."
+                    "This person cannot be invited because they are already associated with another team."
                 );
             }
 
@@ -129,21 +154,50 @@ export class TeamService {
             };
         });
 
-        // Send email only after the transaction commits.
+        // Send email only after the transaction commits successfully.
         await this.sendInviteEmail(
             savedInvite.saved,
             savedInvite.plainToken,
             inviter?.name ?? "A teammate"
         );
     }
-
+    /**
+     * Retrieves a driver by user ID within a specific company.
+     *
+     * Looks up the driver's team membership record to ensure the driver belongs
+     * to the requested company. Returns null when no driver ID is provided or when
+     * no matching driver is found.
+     *
+     * @param companyId - The unique identifier of the company.
+     * @param userId - The unique identifier of the driver user.
+     *
+     * @returns The driver's company membership record or null if unavailable.
+     */
     async getDriverByIdForCompany(companyId: string, userId: string | null) {
-        if (!userId) return null;
+        if (!userId) {
+            return null;
+        }
+
         return await this.userRoleRepo.findOne({
-            where: { userId, companyId }
+            where: {
+                userId,
+                companyId
+            }
         });
     }
 
+    /**
+     * Retrieves a paginated list of team members for a company.
+     *
+     * Supports searching by member name or email, filtering by roles, sorting,
+     * and pagination. Only members belonging to the specified company are
+     * returned.
+     *
+     * @param companyId - The unique identifier of the company.
+     * @param query - The filtering, sorting, and pagination options.
+     *
+     * @returns A paginated list of team members.
+     */
     async listTeamMembersForCompany(
         companyId: string,
         query: ListTeamMembersQueryDto
@@ -164,7 +218,9 @@ export class TeamService {
                 "member.status",
                 "member.createdAt"
             ])
-            .where("member.companyId = :companyId", { companyId });
+            .where("member.companyId = :companyId", {
+                companyId
+            });
 
         if (query.search) {
             qb.andWhere(
@@ -232,6 +288,29 @@ export class TeamService {
         });
     }
 
+    /**
+     * Resends an invitation email to a pending team member.
+     *
+     * Verifies that the acting user has permission to manage team members,
+     * confirms that the member has a pending invitation, generates a new secure
+     * invite token, updates the invitation expiry, and sends a new invitation
+     * email.
+     *
+     * The new invitation invalidates any previously sent invitation link.
+     *
+     * @param companyId - The unique identifier of the company.
+     * @param actingUserId - The unique identifier of the user resending the invite.
+     * @param memberId - The unique identifier of the invited member record.
+     *
+     * @returns void after the invitation has been resent.
+     *
+     * @throws {ForbiddenAppException}
+     * If the acting user does not have permission to manage team members or the
+     * invitation cannot be resent.
+     *
+     * @throws {ResourceNotFoundException}
+     * If the member record could not be found.
+     */
     async resendInvite(
         companyId: string,
         actingUserId: string,
@@ -240,21 +319,27 @@ export class TeamService {
         await this.requireManagerRole(actingUserId, companyId);
 
         const inviter = await this.userRoleRepo.findOne({
-            where: { userId: actingUserId, companyId }
+            where: {
+                userId: actingUserId,
+                companyId
+            }
         });
+
         const member = await this.getMemberForCompany(memberId, companyId);
+
         if (member.status !== TeamMemberStatus.INVITED) {
             throw new ForbiddenAppException(
-                "Only outstanding invites can be resent"
+                "This invitation can no longer be resent."
             );
         }
 
-        // A fresh token invalidates the old link — the previous invite email's
-        // URL stops working, which is the right behavior for "resend."
+        // Generate a new token so previously sent invitation links become invalid.
         const plainToken = generateInviteToken();
+
         member.inviteTokenHash = hashInviteToken(plainToken);
         member.inviteTokenExpiresAt = getInviteTokenExpiry();
         member.invitedAt = new Date();
+
         const saved = await this.userRoleRepo.save(member);
 
         await this.sendInviteEmail(
@@ -264,6 +349,27 @@ export class TeamService {
         );
     }
 
+    /**
+     * Changes the role of a company team member.
+     *
+     * Ensures the acting user has permission to manage team members, validates
+     * that the selected member can have their role updated, and saves the new
+     * role assignment.
+     *
+     * @param companyId - The unique identifier of the company.
+     * @param actingUserId - The unique identifier of the user changing the role.
+     * @param memberId - The unique identifier of the member record.
+     * @param dto - The new team role assignment.
+     *
+     * @returns void after the member role has been updated.
+     *
+     * @throws {ForbiddenAppException}
+     * If the acting user does not have permission to manage members or the member
+     * role cannot be changed.
+     *
+     * @throws {ResourceNotFoundException}
+     * If the member could not be found.
+     */
     async changeMemberRole(
         companyId: string,
         actingUserId: string,
@@ -273,22 +379,44 @@ export class TeamService {
         await this.requireManagerRole(actingUserId, companyId);
 
         const member = await this.getMemberForCompany(memberId, companyId);
+
         if (member.role === TeamRoleType.OWNER) {
             throw new ForbiddenAppException(
-                "The owner's role can't be changed here"
+                "This team member's role cannot be changed."
             );
         }
 
         member.role = dto.role;
+
         await this.userRoleRepo.save(member);
     }
-
+    /**
+     * Removes a member from a company team.
+     *
+     * Removes the member's company association, updates usage tracking, deletes
+     * stored user assets such as avatars, and removes the authentication account
+     * after the database transaction completes successfully.
+     *
+     * @param companyId - The unique identifier of the company.
+     * @param actingUserId - The unique identifier of the user performing removal.
+     * @param memberId - The unique identifier of the member record.
+     *
+     * @returns void after the member has been removed.
+     *
+     * @throws {ForbiddenAppException}
+     * If the acting user does not have permission to remove members or the member
+     * cannot be removed.
+     *
+     * @throws {ResourceNotFoundException}
+     * If the member could not be found.
+     */
     async removeMember(
         companyId: string,
         actingUserId: string,
         memberId: string
     ): Promise<void> {
         await this.requireManagerRole(actingUserId, companyId);
+
         const removedMember = await this.withTransaction(
             undefined,
             async trx => {
@@ -297,49 +425,100 @@ export class TeamService {
                     companyId,
                     trx
                 );
+
                 if (member.role === TeamRoleType.OWNER) {
                     throw new ForbiddenAppException(
-                        "The owner can never be removed"
+                        "This team member cannot be removed."
                     );
                 }
+
                 await trx.getRepository(UserRole).remove(member);
+
                 await this.usageService.decrementTeamMemberCount(
                     companyId,
                     trx
                 );
+
                 return member;
             }
         );
 
-        // Only delete from Supabase after the DB transaction commits successfully.
+        /**
+         * Only remove Supabase account and assets after the database transaction
+         * has completed successfully.
+         */
         if (
             removedMember.status === TeamMemberStatus.ACTIVE &&
             removedMember.userId
         ) {
-            const { error } = await this.supabase.auth.admin.deleteUser(
-                removedMember.userId
-            );
+            try {
+                const supabaseUser =
+                    await this.usersService.getUserFromSupabase(
+                        removedMember.userId
+                    );
 
-            if (error) {
+                const metadata = supabaseUser.user_metadata as Record<
+                    string,
+                    unknown
+                > | null;
+
+                const avatarExtension = metadata?.avatar_extension as
+                    | string
+                    | undefined;
+
+                if (avatarExtension) {
+                    await this.storageService.deleteFile(
+                        StoragePath.userAvatar(
+                            companyId,
+                            removedMember.userId,
+                            `avatar.${avatarExtension}`
+                        )
+                    );
+                }
+
+                await this.usersService.deleteSupabaseUser(
+                    removedMember.userId
+                );
+            } catch (error) {
+                this.logger.error(
+                    `Failed to fully remove user ${removedMember.userId}.`,
+                    error
+                );
+
                 throw new InternalErrorException(
-                    "Member removed from company but failed to delete authentication account."
+                    "The member was removed from the team, but their account could not be fully removed."
                 );
             }
         }
     }
+
     /**
-     * Public — resolves an invite token to display info (no email/password
-     * required yet). Lets the accept-invite page show "Join Acme Logistics
-     * as Dispatcher" and the email it's locked to, BEFORE the person submits
-     * anything.
+     * Retrieves invitation details using an invitation token.
+     *
+     * Validates the invitation token and returns the information needed to display
+     * the invitation acceptance page, including the invited email, company name,
+     * and assigned role.
+     *
+     * @param token - The invitation token.
+     *
+     * @returns Invitation details required for accepting the invitation.
+     *
+     * @throws {ResourceNotFoundException}
+     * If the invitation is invalid, expired, or no longer available.
      */
-    async getInviteByToken(
-        token: string
-    ): Promise<{ email: string; companyName: string; roleLabel: string }> {
+    async getInviteByToken(token: string): Promise<{
+        email: string;
+        companyName: string;
+        roleLabel: string;
+    }> {
         const invite = await this.findValidInviteByToken(token);
-        const company = await this.dataSource
-            .getRepository(Company)
-            .findOne({ where: { id: invite.companyId } });
+
+        const company = await this.dataSource.getRepository(Company).findOne({
+            where: {
+                id: invite.companyId
+            }
+        });
+
         return {
             email: invite.email,
             companyName: company?.name ?? "SmartTrack",
@@ -348,39 +527,51 @@ export class TeamService {
     }
 
     /**
-     * Public, session-less acceptance path — the person has no Supabase
-     * account or session yet. The token (not user input) determines which
-     * invite/email this applies to, so nobody can claim a different
-     * person's seat by editing the request. Creates a PRE-CONFIRMED Supabase
-     * user via the Admin API, on the reasoning that clicking this exact link
-     * already proves email ownership — the same proof a confirmation email
-     * would otherwise provide, so we don't make them confirm twice.
+     * Accepts a company invitation and creates the user's account.
      *
-     * Does NOT establish a session — the frontend should immediately call
-     * supabase.auth.signInWithPassword with the same credentials right after
-     * this succeeds, keeping session handling in the same place it lives
-     * everywhere else in the app.
+     * Validates the invitation token, creates a new authentication account,
+     * activates the team membership, creates default notification settings, and
+     * links the user to the company.
+     *
+     * @param dto - The invitation token, password, and user profile details.
+     *
+     * @returns The created user's ID and email address.
+     *
+     * @throws {ResourceConflictException}
+     * If an account already exists or account creation fails.
+     *
+     * @throws {ResourceNotFoundException}
+     * If the invitation is invalid, expired, or unavailable.
      */
-    async acceptInvite(
-        dto: AcceptInviteDto
-    ): Promise<{ userId: string; email: string }> {
+    async acceptInvite(dto: AcceptInviteDto): Promise<{
+        userId: string;
+        email: string;
+    }> {
         const invite = await this.findValidInviteByToken(dto.token);
 
         const { data, error } = await this.supabase.auth.admin.createUser({
             email: invite.email,
             password: dto.password,
             email_confirm: true,
-            user_metadata: { full_name: dto.fullName }
+            user_metadata: {
+                full_name: dto.fullName
+            }
         });
 
         if (error || !data?.user) {
             if (error?.message?.toLowerCase().includes("already")) {
                 throw new ResourceConflictException(
-                    "An account with this email already exists. Log in, and your invite will be linked automatically."
+                    "An account with this email already exists. Please sign in to continue."
                 );
             }
+
+            this.logger.error(
+                `Failed to create account for invited user ${invite.email}.`,
+                error
+            );
+
             throw new ResourceConflictException(
-                error?.message ?? "Could not create your account"
+                "We couldn't create your account. Please try again."
             );
         }
 
@@ -390,16 +581,20 @@ export class TeamService {
         invite.joinedAt = new Date();
         invite.inviteTokenHash = null;
         invite.inviteTokenExpiresAt = null;
+
         await this.userRoleRepo.save(invite);
 
         const userNotificationSettings = this.notificationRepo.create({
             userId: invite.userId
         });
+
         await this.notificationRepo.save(userNotificationSettings);
 
-        return { userId: data.user.id, email: invite.email };
+        return {
+            userId: data.user.id,
+            email: invite.email
+        };
     }
-
     /**
      * Session-authenticated path — for someone who ALREADY has a SmartTrack
      * account (invited to a second company) and just logs in normally.
@@ -426,16 +621,18 @@ export class TeamService {
     }
 
     /**
-     * A driver is "available" if they're an ACTIVE team member with role
-     * DRIVER and have zero unresolved (pending/arrived) stops across any
-     * trip right now — mirrors the frontend's DriverPicker, which only lets
-     * dispatchers select drivers with no unresolved work in progress.
+     * Retrieves available active drivers for a company.
      *
-     * Deliberately NOT cached — driver availability needs to be correct at
-     * the exact moment of dispatch (assigning a busy driver a second trip is
-     * a real operational mistake), so this always reads live. Contrast with
-     * listTrips below, where a few seconds of staleness on a read-heavy list
-     * view is an acceptable tradeoff; here it isn't.
+     * Finds all active drivers in the company, excludes drivers who currently
+     * have pending or active delivery stops, and enriches the remaining drivers
+     * with profile information such as avatar URL.
+     *
+     * @param companyId - The unique identifier of the company.
+     *
+     * @returns A list of available drivers with profile information.
+     *
+     * @throws {ExternalServiceException}
+     * If user profile information cannot be retrieved.
      */
     async listAvailableDriversForCompany(companyId: string) {
         const drivers = await this.userRoleRepo.find({
@@ -445,13 +642,18 @@ export class TeamService {
                 status: TeamMemberStatus.ACTIVE
             }
         });
-        if (drivers.length === 0) return [];
-        
-        let availableDrivers: Record<string,any>[] = [];
-        
+
+        if (drivers.length === 0) {
+            return [];
+        }
+
         const driverUserIds = drivers
             .map(d => d.userId)
             .filter((id): id is string => !!id);
+
+        if (driverUserIds.length === 0) {
+            return [];
+        }
 
         const busyDriverIds = await this.tripStopRepo
             .createQueryBuilder("stop")
@@ -464,21 +666,34 @@ export class TeamService {
             .andWhere("stop.status IN (:...statuses)", {
                 statuses: [StopStatus.PENDING, StopStatus.ARRIVED]
             })
-            .getRawMany<{ driverUserId: string }>();
+            .getRawMany<{
+                driverUserId: string;
+            }>();
 
-        const busySet = new Set(busyDriverIds.map(r => r.driverUserId));
-        const filteredAvailableDrivers = drivers.filter(
-            d => d.userId && !busySet.has(d.userId)
+        const busySet = new Set(
+            busyDriverIds.map(driver => driver.driverUserId)
         );
+
+        const filteredAvailableDrivers = drivers.filter(
+            driver => !!driver.userId && !busySet.has(driver.userId)
+        );
+
+        const availableDrivers: Record<string, any>[] = [];
+
         for (const driver of filteredAvailableDrivers) {
-            if (!driver.userId) return;
+            if (!driver.userId) {
+                continue;
+            }
+
             const supabaseDriver = await this.usersService.getUserFromSupabase(
                 driver.userId
             );
 
             availableDrivers.push({
                 ...driver,
-                avatarUrl: supabaseDriver.user_metadata.avatar_url
+                avatarUrl:
+                    (supabaseDriver.user_metadata as Record<string, unknown>)
+                        ?.avatar_url ?? null
             });
         }
 
