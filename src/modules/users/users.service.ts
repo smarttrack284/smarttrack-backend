@@ -35,53 +35,52 @@ export class UsersService {
         private readonly config: ConfigService
     ) {}
 
-
     /**
- * Creates a user role assignment for a company.
- *
- * Assigns a user to a company with the specified role and membership status.
- *
- * @param input - The user role information to create.
- * @param manager - Optional transaction entity manager.
- * @returns The newly created user role.
- *
- * @throws {ResourceConflictException}
- * If the user already has a role assigned within the company.
- */
-async createUserRole(
-    input: {
-        userId: string;
-        companyId: string;
-        name: string;
-        email: string;
-        status: TeamMemberStatus;
-        invitedAt?: Date | null;
-        joinedAt?: Date | null;
-        role: TeamRoleType;
-    },
-    manager?: EntityManager
-): Promise<UserRole> {
-    return this.withTransaction(manager, async trx => {
-        const repo = trx.getRepository(UserRole);
+     * Creates a user role assignment for a company.
+     *
+     * Assigns a user to a company with the specified role and membership status.
+     *
+     * @param input - The user role information to create.
+     * @param manager - Optional transaction entity manager.
+     * @returns The newly created user role.
+     *
+     * @throws {ResourceConflictException}
+     * If the user already has a role assigned within the company.
+     */
+    async createUserRole(
+        input: {
+            userId: string;
+            companyId: string;
+            name: string;
+            email: string;
+            status: TeamMemberStatus;
+            invitedAt?: Date | null;
+            joinedAt?: Date | null;
+            role: TeamRoleType;
+        },
+        manager?: EntityManager
+    ): Promise<UserRole> {
+        return this.withTransaction(manager, async trx => {
+            const repo = trx.getRepository(UserRole);
 
-        const existing = await repo.findOne({
-            where: {
-                userId: input.userId,
-                companyId: input.companyId
+            const existing = await repo.findOne({
+                where: {
+                    userId: input.userId,
+                    companyId: input.companyId
+                }
+            });
+
+            if (existing) {
+                throw new ResourceConflictException(
+                    "This user is already a member of this company."
+                );
             }
+
+            const userRole = repo.create(input);
+
+            return await repo.save(userRole);
         });
-
-        if (existing) {
-            throw new ResourceConflictException(
-                "This user is already a member of this company."
-            );
-        }
-
-        const userRole = repo.create(input);
-
-        return await repo.save(userRole);
-    });
-}
+    }
 
     /**
      * Retrieves a user's role within a company.
@@ -109,7 +108,6 @@ async createUserRole(
 
         if (!userRole) {
             throw new ResourceNotFoundException(
-                "User role",
                 "The user does not have access to this company."
             );
         }
@@ -141,7 +139,6 @@ async createUserRole(
 
         if (!data?.user) {
             throw new ResourceNotFoundException(
-                "User",
                 "The requested user could not be found."
             );
         }
@@ -173,7 +170,6 @@ async createUserRole(
 
         if (!userRole) {
             throw new ResourceNotFoundException(
-                "User role",
                 "No role has been assigned to this user."
             );
         }
@@ -181,21 +177,21 @@ async createUserRole(
         return userRole;
     }
 
-/**
- * Updates a user's profile information.
- *
- * Updates profile metadata in Supabase, uploads a new avatar when provided,
- * stores avatar information including the file extension, and synchronizes
- * the user's display name with the company membership record.
- *
- * @param userId - The unique identifier of the user.
- * @param companyId - The unique identifier of the company.
- * @param dto - Profile fields to update.
- * @param avatarFile - Optional avatar file upload information.
- *
- * @returns The updated profile information.
- */
-async updateUserProfile(
+    /**
+     * Updates a user's profile information.
+     *
+     * Updates profile metadata in Supabase, uploads a new avatar when provided,
+     * stores avatar information including the file extension, and synchronizes
+     * the user's display name with the company membership record.
+     *
+     * @param userId - The unique identifier of the user.
+     * @param companyId - The unique identifier of the company.
+     * @param dto - Profile fields to update.
+     * @param avatarFile - Optional avatar file upload information.
+     *
+     * @returns The updated profile information.
+     */
+    async updateUserProfile(
     userId: string,
     companyId: string,
     dto: UpdateUserProfileDto,
@@ -207,12 +203,37 @@ async updateUserProfile(
 ): Promise<{
     id: string;
     name: string | null;
+    phone: string | null;
     avatarUrl: string | null;
 }> {
     let avatarUrl: string | undefined;
     let avatarExtension: string | undefined;
 
+    const supabaseUser = await this.getUserFromSupabase(userId);
+
     if (avatarFile) {
+        const metadata = supabaseUser.user_metadata as
+            | Record<string, unknown>
+            | undefined;
+
+        const existingAvatarExtension = metadata?.avatar_extension as
+            | string
+            | undefined;
+
+        const existingAvatarUrl = metadata?.avatar_url as
+            | string
+            | undefined;
+
+        if (existingAvatarUrl && existingAvatarExtension) {
+            await this.storageService.deleteFile(
+                StoragePath.userAvatar(
+                    companyId,
+                    userId,
+                    `avatar.${existingAvatarExtension}`
+                )
+            );
+        }
+
         const extension = avatarFile.extension.toLowerCase();
 
         const path = StoragePath.userAvatar(
@@ -236,6 +257,10 @@ async updateUserProfile(
         metadataUpdate.full_name = dto.name;
     }
 
+    if (dto.phone !== undefined) {
+        metadataUpdate.phone = dto.phone;
+    }
+
     if (avatarUrl !== undefined) {
         metadataUpdate.avatar_url = avatarUrl;
     }
@@ -244,20 +269,13 @@ async updateUserProfile(
         metadataUpdate.avatar_extension = avatarExtension;
     }
 
-    const updatePayload: {
-        user_metadata?: Record<string, unknown>;
-    } = {};
+    let updatedUser = supabaseUser;
 
     if (Object.keys(metadataUpdate).length > 0) {
-        updatePayload.user_metadata = metadataUpdate;
-    }
-
-    if (Object.keys(updatePayload).length > 0) {
         const { data, error } =
-            await this.supabase.auth.admin.updateUserById(
-                userId,
-                updatePayload
-            );
+            await this.supabase.auth.admin.updateUserById(userId, {
+                user_metadata: metadataUpdate
+            });
 
         if (error || !data?.user) {
             this.logger.error(
@@ -270,26 +288,21 @@ async updateUserProfile(
                 "We couldn't update your profile at the moment. Please try again."
             );
         }
+
+        updatedUser = data.user;
     }
 
     if (dto.name !== undefined) {
-        await this.userRoleRepo.update(
-            { userId },
-            { name: dto.name }
-        );
+        await this.userRoleRepo.update({ userId }, { name: dto.name });
     }
 
-    const refreshed = await this.getUserFromSupabase(userId);
-
-    const metadata =
-        refreshed.user_metadata as Record<string, unknown> | null;
+    const metadata = updatedUser.user_metadata as Record<string, unknown> | null;
 
     return {
-        id: refreshed.id,
-        name:
-            (metadata?.full_name as string | undefined) ?? null,
-        avatarUrl:
-            (metadata?.avatar_url as string | undefined) ?? null
+        id: updatedUser.id,
+        name: (metadata?.full_name as string | undefined) ?? null,
+        phone: (metadata?.phone as string | undefined) ?? null,
+        avatarUrl: (metadata?.avatar_url as string | undefined) ?? null
     };
 }
 
@@ -396,7 +409,6 @@ async updateUserProfile(
 
         if (!notificationSetting) {
             throw new ResourceNotFoundException(
-                "Notification settings",
                 "Notification settings could not be found."
             );
         }
@@ -427,7 +439,6 @@ async updateUserProfile(
 
             if (!notificationSetting) {
                 throw new ResourceNotFoundException(
-                    "Notification settings",
                     "Notification settings could not be found."
                 );
             }

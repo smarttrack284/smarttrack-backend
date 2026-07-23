@@ -18,6 +18,16 @@ import { TeamMemberStatus } from "#/common/constants/team-member-status.constant
 import { StorageService } from "#/common/storage/storage.service";
 import { StoragePath } from "#/common/storage/storage-path.util";
 import { UserRole } from "#/common/entities/user-role.entity";
+import { CreateApiKeyDto } from "./dto/create-api-key.dto";
+import { UpdateSavedLocationDto } from "./dto/update-saved-location.dto";
+import { CreateSavedLocationDto } from "./dto/create-saved-location.dto";
+import { ApiKey } from "#/common/entities/api-key.entity";
+import {
+    generateApiKey,
+    buildApiKeyPreview
+} from "#/common/utils/api-key.util";
+import { hashApiKey } from "#/common/utils/api-key-hash.util";
+import { SavedLocation } from "#/common/entities/saved-location.entity";
 
 @Injectable()
 export class CompaniesService {
@@ -26,6 +36,10 @@ export class CompaniesService {
         @InjectDataSource() private readonly dataSource: DataSource,
         @InjectRepository(Company)
         private readonly companyRepo: Repository<Company>,
+        @InjectRepository(ApiKey)
+        private readonly apiKeyRepo: Repository<ApiKey>,
+        @InjectRepository(SavedLocation)
+        private readonly savedLocationRepo: Repository<SavedLocation>,
         private readonly usersService: UsersService,
         private readonly subscriptionsService: SubscriptionsService,
         private readonly usageService: UsageService,
@@ -145,7 +159,6 @@ export class CompaniesService {
 
         if (!company) {
             throw new ResourceNotFoundException(
-                "Company",
                 "The company you are looking for could not be found."
             );
         }
@@ -175,7 +188,6 @@ export class CompaniesService {
 
         if (!company) {
             throw new ResourceNotFoundException(
-                "Company",
                 "The requested company could not be found."
             );
         }
@@ -237,7 +249,6 @@ export class CompaniesService {
 
             if (!company) {
                 throw new ResourceNotFoundException(
-                    "Company",
                     "The company you are trying to update could not be found."
                 );
             }
@@ -267,67 +278,480 @@ export class CompaniesService {
     }
 
     /**
- * Deletes a company and all associated resources.
- *
- * Removes the company record and relies on database cascade rules to clean up
- * related records such as memberships, notification settings, locations,
- * API keys, orders, and trips. It also removes company storage files and
- * deletes associated Supabase user accounts.
- *
- * @param companyId - The unique identifier of the company.
- * @param manager - Optional transaction entity manager.
- *
- * @throws {ResourceNotFoundException}
- * If the company could not be found.
- */
-async deleteCompany(
-    companyId: string,
-    manager?: EntityManager
-): Promise<void> {
-    const affectedUserIds = await this.withTransaction(
-        manager,
-        async trx => {
-            const repo = trx.getRepository(Company);
+     * Deletes a company and all associated resources.
+     *
+     * Removes the company record and relies on database cascade rules to clean up
+     * related records such as memberships, notification settings, locations,
+     * API keys, orders, and trips. It also removes company storage files and
+     * deletes associated Supabase user accounts.
+     *
+     * @param companyId - The unique identifier of the company.
+     * @param manager - Optional transaction entity manager.
+     *
+     * @throws {ResourceNotFoundException}
+     * If the company could not be found.
+     */
+    async deleteCompany(
+        companyId: string,
+        manager?: EntityManager
+    ): Promise<void> {
+        const affectedUserIds = await this.withTransaction(
+            manager,
+            async trx => {
+                const repo = trx.getRepository(Company);
 
-            const company = await repo.findOne({
+                const company = await repo.findOne({
+                    where: { id: companyId }
+                });
+
+                if (!company) {
+                    throw new ResourceNotFoundException(
+                        "The company you are trying to delete could not be found."
+                    );
+                }
+
+                const memberships = await trx.getRepository(UserRole).find({
+                    where: { companyId },
+                    select: { userId: true }
+                });
+
+                const userIds = memberships
+                    .map(m => m.userId)
+                    .filter((id): id is string => !!id);
+
+                // Database cascade rules handle removal of related records:
+                // UserRole, NotificationSetting, SavedLocation, ApiKey,
+                // Order, and Trip records.
+                await repo.remove(company);
+
+                return userIds;
+            }
+        );
+
+        await this.storageService.deleteFolder(
+            StoragePath.companyRoot(companyId)
+        );
+
+        for (const userId of affectedUserIds) {
+            await this.usersService.deleteSupabaseUser(userId);
+        }
+    }
+
+    /**
+     * Creates a new API key for a company.
+     *
+     * Generates a secure API key, stores only its hashed value for verification,
+     * and returns the plaintext key only once during creation. The plaintext key
+     * cannot be retrieved again after this operation.
+     *
+     * @param companyId - The unique identifier of the company.
+     * @param dto - API key creation details including the display name.
+     *
+     * @returns The created API key details including the plaintext key shown once.
+     *
+     * @throws {ResourceNotFoundException}
+     * If the company does not exist.
+     */
+    async createApiKeyForCompany(
+        companyId: string,
+        dto: CreateApiKeyDto
+    ): Promise<{
+        id: string;
+        name: string;
+        key: string;
+        keyPreview: string;
+        createdAt: Date;
+    }> {
+        return this.withTransaction(undefined, async trx => {
+            const companyRepo = trx.getRepository(Company);
+            const apiKeyRepo = trx.getRepository(ApiKey);
+
+            const company = await companyRepo.findOne({
                 where: { id: companyId }
             });
 
             if (!company) {
                 throw new ResourceNotFoundException(
-                    "Company",
-                    "The company you are trying to delete could not be found."
+                    "The company associated with this API key could not be found."
                 );
             }
 
-            const memberships = await trx
-                .getRepository(UserRole)
-                .find({
-                    where: { companyId },
-                    select: { userId: true }
-                });
+            const plainKey = generateApiKey("live");
 
-            const userIds = memberships
-                .map(m => m.userId)
-                .filter((id): id is string => !!id);
+            const keyHash = hashApiKey(plainKey);
 
-            // Database cascade rules handle removal of related records:
-            // UserRole, NotificationSetting, SavedLocation, ApiKey,
-            // Order, and Trip records.
-            await repo.remove(company);
+            const keyPreview = buildApiKeyPreview(plainKey);
 
-            return userIds;
-        }
-    );
+            const apiKey = apiKeyRepo.create({
+                companyId,
+                name: dto.name,
+                keyHash,
+                keyPreview,
+                lastUsedAt: null,
+                revokedAt: null
+            });
 
-    await this.storageService.deleteFolder(
-        StoragePath.companyRoot(companyId)
-    );
+            const savedApiKey = await apiKeyRepo.save(apiKey);
 
-    for (const userId of affectedUserIds) {
-        await this.usersService.deleteSupabaseUser(userId);
+            return {
+                id: savedApiKey.id,
+                name: savedApiKey.name,
+                key: plainKey,
+                keyPreview: savedApiKey.keyPreview,
+                createdAt: savedApiKey.createdAt
+            };
+        });
     }
-}
+
+    /**
+     * Retrieves all API keys for a company.
+     *
+     * Returns the API keys in descending order of creation date. Sensitive fields
+     * such as the hashed key are never returned.
+     *
+     * @param companyId - The unique identifier of the company.
+     *
+     * @returns A list of API keys for the company.
+     */
+    async listApiKeysForCompany(companyId: string): Promise<
+        {
+            id: string;
+            name: string;
+            keyPreview: string;
+            lastUsedAt: Date | null;
+            revokedAt: Date | null;
+            createdAt: Date;
+        }[]
+    > {
+        const apiKeys = await this.apiKeyRepo.find({
+            where: { companyId },
+            order: {
+                createdAt: "DESC"
+            }
+        });
+
+        return apiKeys.map(apiKey => ({
+            id: apiKey.id,
+            name: apiKey.name,
+            keyPreview: apiKey.keyPreview,
+            lastUsedAt: apiKey.lastUsedAt,
+            revokedAt: apiKey.revokedAt,
+            createdAt: apiKey.createdAt
+        }));
+    }
+
+    /**
+     * Revokes an API key belonging to a company.
+     *
+     * Revoking a key immediately prevents it from being used while preserving it
+     * for audit purposes. Revoked keys cannot be revoked again.
+     *
+     * @param companyId - The unique identifier of the company.
+     * @param apiKeyId - The unique identifier of the API key.
+     *
+     * @returns The revoked API key details.
+     *
+     * @throws {ResourceNotFoundException}
+     * If the API key does not exist for the company.
+     *
+     * @throws {ResourceConflictException}
+     * If the API key has already been revoked.
+     */
+    async revokeApiKeyForCompany(
+        companyId: string,
+        apiKeyId: string
+    ): Promise<{
+        id: string;
+        name: string;
+        keyPreview: string;
+        revokedAt: Date;
+    }> {
+        return this.withTransaction(undefined, async trx => {
+            const apiKeyRepo = trx.getRepository(ApiKey);
+
+            const apiKey = await apiKeyRepo.findOne({
+                where: {
+                    id: apiKeyId,
+                    companyId
+                }
+            });
+
+            if (!apiKey) {
+                throw new ResourceNotFoundException(
+                    "The requested API key could not be found."
+                );
+            }
+
+            if (apiKey.revokedAt) {
+                throw new ResourceConflictException(
+                    "This API key has already been revoked."
+                );
+            }
+
+            apiKey.revokedAt = new Date();
+
+            const saved = await apiKeyRepo.save(apiKey);
+
+            return {
+                id: saved.id,
+                name: saved.name,
+                keyPreview: saved.keyPreview,
+                revokedAt: saved.revokedAt!
+            };
+        });
+    }
+
+    /**
+     * Creates a saved location for a company.
+     *
+     * Saved locations allow companies to quickly reuse frequently visited
+     * destinations such as warehouses, offices, depots, or customer sites.
+     *
+     * @param companyId - The unique identifier of the company.
+     * @param dto - The saved location details.
+     *
+     * @returns The newly created saved location.
+     *
+     * @throws {ResourceNotFoundException}
+     * If the specified company does not exist.
+     */
+    async createSavedLocation(
+        companyId: string,
+        dto: CreateSavedLocationDto
+    ): Promise<{
+        id: string;
+        label: string;
+        address: string;
+        lat: number;
+        lng: number;
+        kind: SavedLocationKind | null;
+        createdAt: Date;
+    }> {
+        return this.withTransaction(undefined, async trx => {
+            const companyRepo = trx.getRepository(Company);
+            const savedLocationRepo = trx.getRepository(SavedLocation);
+
+            const company = await companyRepo.findOne({
+                where: { id: companyId }
+            });
+
+            if (!company) {
+                throw new ResourceNotFoundException(
+                    "The requested company could not be found."
+                );
+            }
+
+            const savedLocation = savedLocationRepo.create({
+                companyId,
+                label: dto.label,
+                address: dto.address,
+                lat: dto.lat,
+                lng: dto.lng,
+                kind: dto.kind ?? null
+            });
+
+            const saved = await savedLocationRepo.save(savedLocation);
+
+            return {
+                id: saved.id,
+                label: saved.label,
+                address: saved.address,
+                lat: saved.lat,
+                lng: saved.lng,
+                kind: saved.kind,
+                createdAt: saved.createdAt
+            };
+        });
+    }
+
+    /**
+     * Retrieves all saved locations for a company.
+     *
+     * Returns the company's saved locations ordered alphabetically by label.
+     *
+     * @param companyId - The unique identifier of the company.
+     *
+     * @returns A list of saved locations.
+     */
+    async listSavedLocations(companyId: string): Promise<
+        {
+            id: string;
+            label: string;
+            address: string;
+            lat: number;
+            lng: number;
+            kind: SavedLocationKind | null;
+            createdAt: Date;
+        }[]
+    > {
+        const savedLocations = await this.savedLocationRepo.find({
+            where: {
+                companyId
+            },
+            order: {
+                label: "ASC"
+            }
+        });
+
+        return savedLocations.map(location => ({
+            id: location.id,
+            label: location.label,
+            address: location.address,
+            lat: location.lat,
+            lng: location.lng,
+            kind: location.kind,
+            createdAt: location.createdAt
+        }));
+    }
+
+    /**
+     * Retrieves a saved location belonging to a company.
+     *
+     * @param companyId - The unique identifier of the company.
+     * @param savedLocationId - The unique identifier of the saved location.
+     *
+     * @returns The requested saved location.
+     *
+     * @throws {ResourceNotFoundException}
+     * If the saved location does not exist for the company.
+     */
+    async getSavedLocation(
+        companyId: string,
+        savedLocationId: string
+    ): Promise<{
+        id: string;
+        label: string;
+        address: string;
+        lat: number;
+        lng: number;
+        kind: SavedLocationKind | null;
+        createdAt: Date;
+    }> {
+        const location = await this.savedLocationRepo.findOne({
+            where: {
+                id: savedLocationId,
+                companyId
+            }
+        });
+
+        if (!location) {
+            throw new ResourceNotFoundException(
+                "The requested saved location could not be found."
+            );
+        }
+
+        return {
+            id: location.id,
+            label: location.label,
+            address: location.address,
+            lat: location.lat,
+            lng: location.lng,
+            kind: location.kind,
+            createdAt: location.createdAt
+        };
+    }
+
+    /**
+     * Updates a saved location belonging to a company.
+     *
+     * Updates the details of an existing saved location. The operation is executed
+     * within a transaction to ensure consistency.
+     *
+     * @param companyId - The unique identifier of the company.
+     * @param savedLocationId - The unique identifier of the saved location.
+     * @param dto - The updated saved location details.
+     *
+     * @returns The updated saved location.
+     *
+     * @throws {ResourceNotFoundException}
+     * If the saved location does not exist for the company.
+     */
+    async updateSavedLocation(
+        companyId: string,
+        savedLocationId: string,
+        dto: UpdateSavedLocationDto
+    ): Promise<{
+        id: string;
+        label: string;
+        address: string;
+        lat: number;
+        lng: number;
+        kind: SavedLocationKind | null;
+        createdAt: Date;
+        updatedAt: Date;
+    }> {
+        return this.withTransaction(undefined, async trx => {
+            const savedLocationRepo = trx.getRepository(SavedLocation);
+
+            const location = await savedLocationRepo.findOne({
+                where: {
+                    id: savedLocationId,
+                    companyId
+                }
+            });
+
+            if (!location) {
+                throw new ResourceNotFoundException(
+                    "The requested saved location could not be found."
+                );
+            }
+
+            location.label = dto.label;
+            location.address = dto.address;
+            location.lat = dto.lat;
+            location.lng = dto.lng;
+            location.kind = dto.kind ?? null;
+
+            const updated = await savedLocationRepo.save(location);
+
+            return {
+                id: updated.id,
+                label: updated.label,
+                address: updated.address,
+                lat: updated.lat,
+                lng: updated.lng,
+                kind: updated.kind,
+                createdAt: updated.createdAt,
+                updatedAt: updated.updatedAt
+            };
+        });
+    }
+
+    /**
+     * Deletes a saved location belonging to a company.
+     *
+     * Permanently removes the saved location. The operation is executed within a
+     * transaction to ensure consistency.
+     *
+     * @param companyId - The unique identifier of the company.
+     * @param savedLocationId - The unique identifier of the saved location.
+     *
+     * @throws {ResourceNotFoundException}
+     * If the saved location does not exist for the company.
+     */
+    async deleteSavedLocation(
+        companyId: string,
+        savedLocationId: string
+    ): Promise<void> {
+        return this.withTransaction(undefined, async trx => {
+            const savedLocationRepo = trx.getRepository(SavedLocation);
+
+            const location = await savedLocationRepo.findOne({
+                where: {
+                    id: savedLocationId,
+                    companyId
+                }
+            });
+
+            if (!location) {
+                throw new ResourceNotFoundException(
+                    "The requested saved location could not be found."
+                );
+            }
+
+            await savedLocationRepo.remove(location);
+        });
+    }
 
     /**
      * Runs `work` inside a transaction.

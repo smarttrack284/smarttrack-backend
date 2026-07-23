@@ -386,10 +386,23 @@ export class TeamService {
             );
         }
 
+        // Prevent changing a driver's role while they have an active trip.
+        if (
+            member.role === TeamRoleType.DRIVER &&
+            dto.role !== TeamRoleType.DRIVER &&
+            member.userId &&
+            (await this.isDriverAssignedToTrip(companyId, member.userId))
+        ) {
+            throw new ForbiddenAppException(
+                "This driver is currently assigned to an active trip and their role cannot be changed."
+            );
+        }
+
         member.role = dto.role;
 
         await this.userRoleRepo.save(member);
     }
+
     /**
      * Removes a member from a company team.
      *
@@ -429,6 +442,19 @@ export class TeamService {
                 if (member.role === TeamRoleType.OWNER) {
                     throw new ForbiddenAppException(
                         "This team member cannot be removed."
+                    );
+                }
+
+                if (
+                    member.role === TeamRoleType.DRIVER &&
+                    member.userId &&
+                    (await this.isDriverAssignedToTrip(
+                        companyId,
+                        member.userId
+                    ))
+                ) {
+                    throw new ForbiddenAppException(
+                        "This driver is currently assigned to an active trip and cannot be removed."
                     );
                 }
 
@@ -700,6 +726,41 @@ export class TeamService {
         return availableDrivers;
     }
 
+    /**
+     * Determines whether a driver is currently assigned to an active trip.
+     *
+     * A driver is considered assigned when they have at least one trip stop that
+     * is still active. This is used to prevent removing a driver while they are
+     * assigned to an ongoing trip.
+     *
+     * @param companyId - The unique identifier of the company.
+     * @param driverUserId - The unique identifier of the driver's user account.
+     * @param manager - Optional transaction manager.
+     *
+     * @returns `true` if the driver has an active trip assignment; otherwise `false`.
+     */
+    private async isDriverAssignedToTrip(
+        companyId: string,
+        driverUserId: string,
+        manager?: EntityManager
+    ): Promise<boolean> {
+        const repo = (manager ?? this.dataSource).getRepository(TripStop);
+
+        const assignment = await repo
+            .createQueryBuilder("stop")
+            .innerJoin("stop.trip", "trip")
+            .select("1")
+            .where("trip.companyId = :companyId", { companyId })
+            .andWhere("trip.driverUserId = :driverUserId", { driverUserId })
+            .andWhere("stop.status IN (:...statuses)", {
+                statuses: [StopStatus.PENDING, StopStatus.ARRIVED]
+            })
+            .limit(1)
+            .getRawOne();
+
+        return !!assignment;
+    }
+
     private async withTransaction<T>(
         manager: EntityManager | undefined,
         work: (manager: EntityManager) => Promise<T>
@@ -784,7 +845,7 @@ export class TeamService {
             !match.inviteTokenExpiresAt ||
             match.inviteTokenExpiresAt < new Date()
         ) {
-            throw new ResourceNotFoundException("Invite");
+            throw new ResourceNotFoundException("This invite cannot be found");
         }
 
         return match;
@@ -800,7 +861,9 @@ export class TeamService {
             : this.userRoleRepo;
         const member = await repo.findOne({ where: { id: memberId } });
         if (!member)
-            throw new ResourceNotFoundException("Team member", memberId);
+            throw new ResourceNotFoundException(
+                "This team member cannot be found"
+            );
         if (member.companyId !== companyId) {
             throw new ForbiddenAppException(
                 "This member does not belong to your company"

@@ -147,7 +147,6 @@ export class OrdersService {
 
         if (!order) {
             throw new ResourceNotFoundException(
-                "Order",
                 "The order you are looking for could not be found."
             );
         }
@@ -217,7 +216,6 @@ export class OrdersService {
 
         if (!order) {
             throw new ResourceNotFoundException(
-                "Order",
                 "The order you are looking for could not be found."
             );
         }
@@ -353,7 +351,6 @@ export class OrdersService {
 
             if (!order) {
                 throw new ResourceNotFoundException(
-                    "Order",
                     "The order you are trying to update could not be found."
                 );
             }
@@ -430,7 +427,6 @@ export class OrdersService {
 
             if (!order) {
                 throw new ResourceNotFoundException(
-                    "Order",
                     "The order you are trying to assign a driver to could not be found."
                 );
             }
@@ -509,7 +505,6 @@ export class OrdersService {
 
             if (!order) {
                 throw new ResourceNotFoundException(
-                    "Order",
                     "The order you are trying to update could not be found."
                 );
             }
@@ -624,7 +619,6 @@ export class OrdersService {
 
             if (!order) {
                 throw new ResourceNotFoundException(
-                    "Order",
                     "The order you are trying to delete could not be found."
                 );
             }

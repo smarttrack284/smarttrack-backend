@@ -69,7 +69,7 @@ export class UsersController {
     );
   }
 
-  @Post('password')
+  @Patch('password')
   async updatePassword(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UpdatePasswordDto,

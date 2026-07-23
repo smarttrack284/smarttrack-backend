@@ -117,7 +117,6 @@ export class TrackingService {
 
     if (!trip) {
       throw new ResourceNotFoundException(
-        'Trip',
         'The requested trip could not be found.',
       );
     }
@@ -420,7 +419,7 @@ export class TrackingService {
       status: stop.status,
       arrivedAt: stop.arrivedAt,
       completedAt: stop.completedAt,
-      skipReason: stop.skipReason,
+      skiReason: stop.skipReason,
       skipNote: stop.skipNote,
     }));
 
@@ -478,7 +477,6 @@ export class TrackingService {
 
     if (!trip) {
       throw new ResourceNotFoundException(
-        'Trip',
         'The requested trip could not be found.',
       );
     }
@@ -513,7 +511,6 @@ export class TrackingService {
 
     if (!order) {
       throw new ResourceNotFoundException(
-        'Order',
         "We couldn't find any delivery with that tracking number.",
       );
     }
