@@ -1,10 +1,10 @@
-import { StopStatus } from "#/common/constants/stop-status.constant";
-import type { Trip } from "#/common/entities/trip.entity";
+import { StopStatus } from '#/common/constants/stop-status.constant';
+import type { Trip } from '#/common/entities/trip.entity';
 
 export type TripActivityEvent = {
-    id: string;
-    message: string;
-    timestamp: string;
+  id: string;
+  message: string;
+  timestamp: string;
 };
 
 /**
@@ -18,54 +18,53 @@ export type TripActivityEvent = {
  * time, same pattern as deriveTripStatus/getTripProgress.
  */
 export function deriveTripActivity(trip: Trip): TripActivityEvent[] {
-    const events: TripActivityEvent[] = [
-        {
-            id: `${trip.id}-created`,
-            message: "Trip created",
-            timestamp: trip.createdAt.toISOString()
-        }
-    ];
+  const events: TripActivityEvent[] = [
+    {
+      id: `${trip.id}-created`,
+      message: 'Trip created',
+      timestamp: new Date(trip.createdAt).toISOString(),
+    },
+  ];
 
-    if (trip.startedAt) {
-        events.push({
-            id: `${trip.id}-started`,
-            message: "Driver started the trip",
-            timestamp: trip.startedAt.toISOString()
-        });
+  if (trip.startedAt) {
+    events.push({
+      id: `${trip.id}-started`,
+      message: 'Driver started the trip',
+      timestamp: new Date(trip.startedAt).toISOString(),
+    });
+  }
+
+  for (const stop of trip.stops) {
+    if (stop.arrivedAt) {
+      events.push({
+        id: `${stop.id}-arrived`,
+        message: `Arrived — ${stop.order.customerName} (${stop.order.orderReference})`,
+        timestamp: new Date(stop.arrivedAt).toISOString(),
+      });
     }
 
-    for (const stop of trip.stops) {
-        if (stop.arrivedAt) {
-            events.push({
-                id: `${stop.id}-arrived`,
-                message: `Arrived — ${stop.order.customerName} (${stop.order.orderReference})`,
-                timestamp: stop.arrivedAt.toISOString()
-            });
-        }
-
-        if (stop.status === StopStatus.COMPLETED && stop.completedAt) {
-            events.push({
-                id: `${stop.id}-completed`,
-                message: `Delivered — ${stop.order.customerName} (${stop.order.orderReference})`,
-                timestamp: stop.completedAt.toISOString()
-            });
-        }
-
-        if (stop.status === StopStatus.SKIPPED) {
-            events.push({
-                id: `${stop.id}-skipped`,
-                message: `Skipped — ${stop.order.customerName} (${
-                    stop.order.orderReference
-                })${stop.skipReason ? `: ${stop.skipReason}` : ""}`,
-                // Skip has no dedicated timestamp column — updatedAt is the closest
-                // real fact available at the moment the skip was recorded.
-                timestamp: stop.updatedAt.toISOString()
-            });
-        }
+    if (stop.status === StopStatus.COMPLETED && stop.completedAt) {
+      events.push({
+        id: `${stop.id}-completed`,
+        message: `Delivered — ${stop.order.customerName} (${stop.order.orderReference})`,
+        timestamp: new Date(stop.completedAt).toISOString(),
+      });
     }
 
-    return events.sort(
-        (a, b) =>
-            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
+    if (stop.status === StopStatus.SKIPPED) {
+      events.push({
+        id: `${stop.id}-skipped`,
+        message: `Skipped — ${stop.order.customerName} (${
+          stop.order.orderReference
+        })${stop.skipReason ? `: ${stop.skipReason}` : ''}`,
+        // Skip has no dedicated timestamp column — updatedAt is the closest
+        // real fact available at the moment the skip was recorded.
+        timestamp: new Date(stop.updatedAt).toISOString(),
+      });
+    }
+  }
+
+  return events.sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+  );
 }
