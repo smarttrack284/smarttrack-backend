@@ -39,6 +39,7 @@ import {
 import { RedisCacheService } from "#/common/cache/redis-cache.service";
 import { UserRole } from "#/common/entities/user-role.entity";
 import { TeamService } from "#/modules/team/team.service";
+import { ErrorHandlerService } from "#/common/errors/error-handler.service";
 
 @Injectable()
 export class OrdersService {
@@ -52,7 +53,8 @@ export class OrdersService {
         private readonly usersService: UsersService,
         private readonly teamService: TeamService,
         private readonly events: EventEmitter2,
-        private readonly cache: RedisCacheService
+        private readonly cache: RedisCacheService,
+        private readonly errorHandler: ErrorHandlerService
     ) {}
 
     /**
@@ -75,52 +77,58 @@ export class OrdersService {
         createdByUserId: string,
         manager?: EntityManager
     ) {
-        const userRole =
-            await this.usersService.getUserRoleByUserId(createdByUserId);
+        try {
+            const userRole =
+                await this.usersService.getUserRoleByUserId(createdByUserId);
 
-        return this.withTransaction(manager, async trx => {
-            await this.usageService.incrementOrderCount(
-                userRole.companyId,
-                trx
-            );
+            return this.withTransaction(manager, async trx => {
+                await this.usageService.incrementOrderCount(
+                    userRole.companyId,
+                    trx
+                );
 
-            const trackingNumber = await this.generateUniqueTrackingNumber(trx);
+                const trackingNumber =
+                    await this.generateUniqueTrackingNumber(trx);
 
-            const orderReference = await this.generateUniqueOrderReference(trx);
+                const orderReference =
+                    await this.generateUniqueOrderReference(trx);
 
-            const order = trx.getRepository(Order).create({
-                companyId: userRole.companyId,
-                trackingNumber,
-                orderReference,
-                customerName: dto.customerName,
-                customerPhone: dto.customerPhone,
-                pickupLocation: dto.pickupLocation,
-                pickupSavedLocationId: dto.pickupSavedLocationId ?? null,
-                dropoffLocation: dto.dropoffLocation,
-                items: dto.items.map(item =>
-                    trx.getRepository(OrderItem).create(item)
-                ),
-                priority: dto.priority ?? OrderPriority.NORMAL,
-                scheduledFor: dto.scheduledFor
-                    ? new Date(dto.scheduledFor)
-                    : null,
-                notes: dto.notes ?? null,
-                createdByUserId,
-                status: OrderStatus.PENDING
+                const order = trx.getRepository(Order).create({
+                    companyId: userRole.companyId,
+                    trackingNumber,
+                    orderReference,
+                    customerName: dto.customerName,
+                    customerPhone: dto.customerPhone,
+                    pickupLocation: dto.pickupLocation,
+                    pickupSavedLocationId: dto.pickupSavedLocationId ?? null,
+                    dropoffLocation: dto.dropoffLocation,
+                    items: dto.items.map(item =>
+                        trx.getRepository(OrderItem).create(item)
+                    ),
+                    priority: dto.priority ?? OrderPriority.NORMAL,
+                    scheduledFor: dto.scheduledFor
+                        ? new Date(dto.scheduledFor)
+                        : null,
+                    notes: dto.notes ?? null,
+                    createdByUserId,
+                    status: OrderStatus.PENDING
+                });
+
+                const saved = await trx.getRepository(Order).save(order);
+
+                this.events.emit(
+                    ORDER_EVENTS.CREATED,
+                    new OrderCreatedEvent(userRole.companyId)
+                );
+
+                return {
+                    id: saved.id,
+                    orderReference
+                };
             });
-
-            const saved = await trx.getRepository(Order).save(order);
-
-            this.events.emit(
-                ORDER_EVENTS.CREATED,
-                new OrderCreatedEvent(userRole.companyId)
-            );
-
-            return {
-                id: saved.id,
-                orderReference
-            };
-        });
+        } catch (err) {
+            this.errorHandler.handle(err, "OrdersService.createOrder");
+        }
     }
 
     /**
@@ -138,20 +146,26 @@ export class OrdersService {
         orderId: string,
         manager?: EntityManager
     ): Promise<Order> {
-        const repo = manager ? manager.getRepository(Order) : this.orderRepo;
+        try {
+            const repo = manager
+                ? manager.getRepository(Order)
+                : this.orderRepo;
 
-        const order = await repo.findOne({
-            where: { id: orderId },
-            relations: { items: true }
-        });
+            const order = await repo.findOne({
+                where: { id: orderId },
+                relations: { items: true }
+            });
 
-        if (!order) {
-            throw new ResourceNotFoundException(
-                "The order you are looking for could not be found."
-            );
+            if (!order) {
+                throw new ResourceNotFoundException(
+                    "The order you are looking for could not be found."
+                );
+            }
+
+            return order;
+        } catch (err) {
+            this.errorHandler.handle(err, "OrdersService.getOrderById");
         }
-
-        return order;
     }
 
     /**
@@ -177,15 +191,22 @@ export class OrdersService {
         companyId: string,
         manager?: EntityManager
     ): Promise<Order> {
-        const order = await this.getOrderById(orderId, manager);
+        try {
+            const order = await this.getOrderById(orderId, manager);
 
-        if (order.companyId !== companyId) {
-            throw new ForbiddenAppException(
-                "You do not have permission to access this order."
+            if (order.companyId !== companyId) {
+                throw new ForbiddenAppException(
+                    "You do not have permission to access this order."
+                );
+            }
+
+            return order;
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "OrdersService.getOrderByIdForCompany"
             );
         }
-
-        return order;
     }
 
     /**
@@ -209,32 +230,39 @@ export class OrdersService {
         orderReference: string,
         companyId: string
     ) {
-        const order = await this.orderRepo.findOne({
-            where: { orderReference },
-            relations: { items: true }
-        });
+        try {
+            const order = await this.orderRepo.findOne({
+                where: { orderReference },
+                relations: { items: true }
+            });
 
-        if (!order) {
-            throw new ResourceNotFoundException(
-                "The order you are looking for could not be found."
+            if (!order) {
+                throw new ResourceNotFoundException(
+                    "The order you are looking for could not be found."
+                );
+            }
+
+            if (order.companyId !== companyId) {
+                throw new ForbiddenAppException(
+                    "You do not have permission to access this order."
+                );
+            }
+
+            const driver = await this.teamService.getDriverByIdForCompany(
+                companyId,
+                order.assignedDriverUserId
+            );
+
+            return {
+                ...order,
+                driverName: driver?.name
+            };
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "OrdersService.getOrderByReferenceForCompany"
             );
         }
-
-        if (order.companyId !== companyId) {
-            throw new ForbiddenAppException(
-                "You do not have permission to access this order."
-            );
-        }
-
-        const driver = await this.teamService.getDriverByIdForCompany(
-            companyId,
-            order.assignedDriverUserId
-        );
-
-        return {
-            ...order,
-            driverName: driver?.name
-        };
     }
 
     /**
@@ -250,69 +278,73 @@ export class OrdersService {
      * @returns A paginated list of company orders with total count.
      */
     async listOrdersForCompany(companyId: string, query: ListOrdersQueryDto) {
-        const page = query.page ?? 1;
-        const pageSize = query.pageSize ?? 20;
+        try {
+            const page = query.page ?? 1;
+            const pageSize = query.pageSize ?? 20;
 
-        const qb = this.orderRepo
-            .createQueryBuilder("order")
-            .leftJoinAndSelect("order.items", "items")
-            .where("order.companyId = :companyId", { companyId });
+            const qb = this.orderRepo
+                .createQueryBuilder("order")
+                .leftJoinAndSelect("order.items", "items")
+                .where("order.companyId = :companyId", { companyId });
 
-        if (query.status) {
-            qb.andWhere("order.status = :status", {
-                status: query.status
-            });
-        }
+            if (query.status) {
+                qb.andWhere("order.status = :status", {
+                    status: query.status
+                });
+            }
 
-        if (query.search) {
-            qb.andWhere(
-                "(order.trackingNumber ILIKE :search OR order.customerName ILIKE :search OR order.orderReference ILIKE :search)",
-                {
-                    search: `%${query.search}%`
-                }
+            if (query.search) {
+                qb.andWhere(
+                    "(order.trackingNumber ILIKE :search OR order.customerName ILIKE :search OR order.orderReference ILIKE :search)",
+                    {
+                        search: `%${query.search}%`
+                    }
+                );
+            }
+
+            if (query.dateFrom) {
+                qb.andWhere("order.createdAt >= :dateFrom", {
+                    dateFrom: new Date(query.dateFrom)
+                });
+            }
+
+            if (query.dateTo) {
+                const endOfDay = new Date(query.dateTo);
+
+                endOfDay.setHours(23, 59, 59, 999);
+
+                qb.andWhere("order.createdAt <= :dateTo", {
+                    dateTo: endOfDay
+                });
+            }
+
+            qb.orderBy("order.createdAt", "DESC")
+                .skip((page - 1) * pageSize)
+                .take(pageSize);
+
+            const [orders, total] = await qb.getManyAndCount();
+
+            const driverNameByUserId = await this.getDriverNamesForOrders(
+                companyId,
+                orders
             );
+
+            const ordersWithDriverNames = orders.map(order => ({
+                ...order,
+                driverName: order.assignedDriverUserId
+                    ? driverNameByUserId.get(order.assignedDriverUserId) ?? null
+                    : null
+            }));
+
+            return {
+                orders: ordersWithDriverNames,
+                total,
+                page,
+                pageSize
+            };
+        } catch (err) {
+            this.errorHandler.handle(err, "OrdersService.listOrdersForCompany");
         }
-
-        if (query.dateFrom) {
-            qb.andWhere("order.createdAt >= :dateFrom", {
-                dateFrom: new Date(query.dateFrom)
-            });
-        }
-
-        if (query.dateTo) {
-            const endOfDay = new Date(query.dateTo);
-
-            endOfDay.setHours(23, 59, 59, 999);
-
-            qb.andWhere("order.createdAt <= :dateTo", {
-                dateTo: endOfDay
-            });
-        }
-
-        qb.orderBy("order.createdAt", "DESC")
-            .skip((page - 1) * pageSize)
-            .take(pageSize);
-
-        const [orders, total] = await qb.getManyAndCount();
-
-        const driverNameByUserId = await this.getDriverNamesForOrders(
-            companyId,
-            orders
-        );
-
-        const ordersWithDriverNames = orders.map(order => ({
-            ...order,
-            driverName: order.assignedDriverUserId
-                ? driverNameByUserId.get(order.assignedDriverUserId) ?? null
-                : null
-        }));
-
-        return {
-            orders: ordersWithDriverNames,
-            total,
-            page,
-            pageSize
-        };
     }
 
     /**
@@ -344,51 +376,58 @@ export class OrdersService {
         dto: UpdateOrderStatusDto,
         manager?: EntityManager
     ) {
-        return this.withTransaction(manager, async trx => {
-            const order = await trx.getRepository(Order).findOne({
-                where: { id: orderId }
+        try {
+            return this.withTransaction(manager, async trx => {
+                const order = await trx.getRepository(Order).findOne({
+                    where: { id: orderId }
+                });
+
+                if (!order) {
+                    throw new ResourceNotFoundException(
+                        "The order you are trying to update could not be found."
+                    );
+                }
+
+                if (order.companyId !== companyId) {
+                    throw new ForbiddenAppException(
+                        "You do not have permission to update this order."
+                    );
+                }
+
+                const allowed = ALLOWED_ORDER_STATUS_TRANSITIONS[order.status];
+
+                if (!allowed.includes(dto.status)) {
+                    throw new InvalidStateTransitionException(
+                        "order",
+                        order.status,
+                        dto.status
+                    );
+                }
+
+                const previousStatus = order.status;
+
+                order.status = dto.status;
+
+                const saved = await trx.getRepository(Order).save(order);
+
+                this.events.emit(
+                    ORDER_EVENTS.STATUS_CHANGED,
+                    new OrderStatusChangedEvent(
+                        companyId,
+                        order.id,
+                        previousStatus,
+                        dto.status
+                    )
+                );
+
+                return saved;
             });
-
-            if (!order) {
-                throw new ResourceNotFoundException(
-                    "The order you are trying to update could not be found."
-                );
-            }
-
-            if (order.companyId !== companyId) {
-                throw new ForbiddenAppException(
-                    "You do not have permission to update this order."
-                );
-            }
-
-            const allowed = ALLOWED_ORDER_STATUS_TRANSITIONS[order.status];
-
-            if (!allowed.includes(dto.status)) {
-                throw new InvalidStateTransitionException(
-                    "order",
-                    order.status,
-                    dto.status
-                );
-            }
-
-            const previousStatus = order.status;
-
-            order.status = dto.status;
-
-            const saved = await trx.getRepository(Order).save(order);
-
-            this.events.emit(
-                ORDER_EVENTS.STATUS_CHANGED,
-                new OrderStatusChangedEvent(
-                    companyId,
-                    order.id,
-                    previousStatus,
-                    dto.status
-                )
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "OrdersService.updateOrderStatusForCompany"
             );
-
-            return saved;
-        });
+        }
     }
 
     /**
@@ -420,52 +459,59 @@ export class OrdersService {
         driverUserId: string,
         manager?: EntityManager
     ): Promise<Order> {
-        return this.withTransaction(manager, async trx => {
-            const order = await trx.getRepository(Order).findOne({
-                where: { id }
+        try {
+            return this.withTransaction(manager, async trx => {
+                const order = await trx.getRepository(Order).findOne({
+                    where: { id }
+                });
+
+                if (!order) {
+                    throw new ResourceNotFoundException(
+                        "The order you are trying to assign a driver to could not be found."
+                    );
+                }
+
+                if (order.companyId !== companyId) {
+                    throw new ForbiddenAppException(
+                        "You do not have permission to assign a driver to this order."
+                    );
+                }
+
+                const allowed = ALLOWED_ORDER_STATUS_TRANSITIONS[order.status];
+
+                if (!allowed.includes(OrderStatus.ASSIGNED)) {
+                    throw new InvalidStateTransitionException(
+                        "order",
+                        order.status,
+                        OrderStatus.ASSIGNED
+                    );
+                }
+
+                const previousStatus = order.status;
+
+                order.assignedDriverUserId = driverUserId;
+                order.status = OrderStatus.ASSIGNED;
+
+                const saved = await trx.getRepository(Order).save(order);
+
+                this.events.emit(
+                    ORDER_EVENTS.STATUS_CHANGED,
+                    new OrderStatusChangedEvent(
+                        companyId,
+                        order.id,
+                        previousStatus,
+                        OrderStatus.ASSIGNED
+                    )
+                );
+
+                return saved;
             });
-
-            if (!order) {
-                throw new ResourceNotFoundException(
-                    "The order you are trying to assign a driver to could not be found."
-                );
-            }
-
-            if (order.companyId !== companyId) {
-                throw new ForbiddenAppException(
-                    "You do not have permission to assign a driver to this order."
-                );
-            }
-
-            const allowed = ALLOWED_ORDER_STATUS_TRANSITIONS[order.status];
-
-            if (!allowed.includes(OrderStatus.ASSIGNED)) {
-                throw new InvalidStateTransitionException(
-                    "order",
-                    order.status,
-                    OrderStatus.ASSIGNED
-                );
-            }
-
-            const previousStatus = order.status;
-
-            order.assignedDriverUserId = driverUserId;
-            order.status = OrderStatus.ASSIGNED;
-
-            const saved = await trx.getRepository(Order).save(order);
-
-            this.events.emit(
-                ORDER_EVENTS.STATUS_CHANGED,
-                new OrderStatusChangedEvent(
-                    companyId,
-                    order.id,
-                    previousStatus,
-                    OrderStatus.ASSIGNED
-                )
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "OrdersService.assignDriverForCompany"
             );
-
-            return saved;
-        });
+        }
     }
     /**
      * Updates an existing order for a company.
@@ -497,93 +543,100 @@ export class OrdersService {
         dto: UpdateOrderDto,
         manager?: EntityManager
     ) {
-        return this.withTransaction(manager, async trx => {
-            const order = await trx.getRepository(Order).findOne({
-                where: { id: orderId },
-                relations: { items: true }
+        try {
+            return this.withTransaction(manager, async trx => {
+                const order = await trx.getRepository(Order).findOne({
+                    where: { id: orderId },
+                    relations: { items: true }
+                });
+
+                if (!order) {
+                    throw new ResourceNotFoundException(
+                        "The order you are trying to update could not be found."
+                    );
+                }
+
+                if (order.companyId !== companyId) {
+                    throw new ForbiddenAppException(
+                        "You do not have permission to update this order."
+                    );
+                }
+
+                if (LOCKED_ORDER_STATUSES.has(order.status)) {
+                    throw new BadRequestAppException(
+                        "This order can no longer be edited."
+                    );
+                }
+
+                const editableFields = getEditableFieldsForStatus(order.status);
+
+                const rejectedFields = this.getDisallowedFieldsInDto(
+                    dto,
+                    editableFields
+                );
+
+                if (rejectedFields.length > 0) {
+                    throw new BadRequestAppException(
+                        "Some of the selected fields cannot be changed at this stage of the order.",
+                        {
+                            rejectedFields,
+                            status: order.status
+                        }
+                    );
+                }
+
+                if (dto.customerName !== undefined) {
+                    order.customerName = dto.customerName;
+                }
+
+                if (dto.customerPhone !== undefined) {
+                    order.customerPhone = dto.customerPhone;
+                }
+
+                if (dto.pickupLocation !== undefined) {
+                    order.pickupLocation = dto.pickupLocation;
+                }
+
+                if (dto.pickupSavedLocationId !== undefined) {
+                    order.pickupSavedLocationId = dto.pickupSavedLocationId;
+                }
+
+                if (dto.dropoffLocation !== undefined) {
+                    order.dropoffLocation = dto.dropoffLocation;
+                }
+
+                if (dto.priority !== undefined) {
+                    order.priority = dto.priority;
+                }
+
+                if (dto.scheduledFor !== undefined) {
+                    order.scheduledFor = dto.scheduledFor
+                        ? new Date(dto.scheduledFor)
+                        : null;
+                }
+
+                if (dto.notes !== undefined) {
+                    order.notes = dto.notes;
+                }
+
+                if (dto.items !== undefined) {
+                    await trx
+                        .getRepository(OrderItem)
+                        .delete({ orderId: order.id });
+
+                    order.items = dto.items.map(item =>
+                        trx.getRepository(OrderItem).create(item)
+                    );
+                }
+
+                await trx.getRepository(Order).save(order);
             });
-
-            if (!order) {
-                throw new ResourceNotFoundException(
-                    "The order you are trying to update could not be found."
-                );
-            }
-
-            if (order.companyId !== companyId) {
-                throw new ForbiddenAppException(
-                    "You do not have permission to update this order."
-                );
-            }
-
-            if (LOCKED_ORDER_STATUSES.has(order.status)) {
-                throw new BadRequestAppException(
-                    "This order can no longer be edited."
-                );
-            }
-
-            const editableFields = getEditableFieldsForStatus(order.status);
-
-            const rejectedFields = this.getDisallowedFieldsInDto(
-                dto,
-                editableFields
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "OrdersService.updateOrderForCompany"
             );
-
-            if (rejectedFields.length > 0) {
-                throw new BadRequestAppException(
-                    "Some of the selected fields cannot be changed at this stage of the order.",
-                    {
-                        rejectedFields,
-                        status: order.status
-                    }
-                );
-            }
-
-            if (dto.customerName !== undefined) {
-                order.customerName = dto.customerName;
-            }
-
-            if (dto.customerPhone !== undefined) {
-                order.customerPhone = dto.customerPhone;
-            }
-
-            if (dto.pickupLocation !== undefined) {
-                order.pickupLocation = dto.pickupLocation;
-            }
-
-            if (dto.pickupSavedLocationId !== undefined) {
-                order.pickupSavedLocationId = dto.pickupSavedLocationId;
-            }
-
-            if (dto.dropoffLocation !== undefined) {
-                order.dropoffLocation = dto.dropoffLocation;
-            }
-
-            if (dto.priority !== undefined) {
-                order.priority = dto.priority;
-            }
-
-            if (dto.scheduledFor !== undefined) {
-                order.scheduledFor = dto.scheduledFor
-                    ? new Date(dto.scheduledFor)
-                    : null;
-            }
-
-            if (dto.notes !== undefined) {
-                order.notes = dto.notes;
-            }
-
-            if (dto.items !== undefined) {
-                await trx
-                    .getRepository(OrderItem)
-                    .delete({ orderId: order.id });
-
-                order.items = dto.items.map(item =>
-                    trx.getRepository(OrderItem).create(item)
-                );
-            }
-
-            await trx.getRepository(Order).save(order);
-        });
+        }
     }
     /**
      * Deletes an order belonging to a company.
@@ -612,41 +665,48 @@ export class OrdersService {
         companyId: string,
         manager?: EntityManager
     ) {
-        await this.withTransaction(manager, async trx => {
-            const order = await trx.getRepository(Order).findOne({
-                where: { id: orderId }
+        try {
+            await this.withTransaction(manager, async trx => {
+                const order = await trx.getRepository(Order).findOne({
+                    where: { id: orderId }
+                });
+
+                if (!order) {
+                    throw new ResourceNotFoundException(
+                        "The order you are trying to delete could not be found."
+                    );
+                }
+
+                if (order.companyId !== companyId) {
+                    throw new ForbiddenAppException(
+                        "You do not have permission to delete this order."
+                    );
+                }
+
+                if (!DELETABLE_ORDER_STATUSES.has(order.status)) {
+                    throw new BadRequestAppException(
+                        "This order cannot be deleted at its current stage.",
+                        {
+                            status: order.status
+                        }
+                    );
+                }
+
+                await trx.getRepository(Order).remove(order);
+
+                await this.usageService.decrementOrderCount(companyId, trx);
+
+                this.events.emit(
+                    ORDER_EVENTS.DELETED,
+                    new OrderDeletedEvent(companyId)
+                );
             });
-
-            if (!order) {
-                throw new ResourceNotFoundException(
-                    "The order you are trying to delete could not be found."
-                );
-            }
-
-            if (order.companyId !== companyId) {
-                throw new ForbiddenAppException(
-                    "You do not have permission to delete this order."
-                );
-            }
-
-            if (!DELETABLE_ORDER_STATUSES.has(order.status)) {
-                throw new BadRequestAppException(
-                    "This order cannot be deleted at its current stage.",
-                    {
-                        status: order.status
-                    }
-                );
-            }
-
-            await trx.getRepository(Order).remove(order);
-
-            await this.usageService.decrementOrderCount(companyId, trx);
-
-            this.events.emit(
-                ORDER_EVENTS.DELETED,
-                new OrderDeletedEvent(companyId)
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "OrdersService.deleteOrderForCompany"
             );
-        });
+        }
     }
 
     /**
@@ -661,36 +721,43 @@ export class OrdersService {
      * @returns The company's order KPI metrics.
      */
     async getKpiCountsForCompany(companyId: string, startOfToday: Date) {
-        const raw = await this.orderRepo
-            .createQueryBuilder("order")
-            .select(
-                "COUNT(*) FILTER (WHERE order.createdAt >= :startOfToday)",
-                "ordersToday"
-            )
-            .addSelect(
-                `COUNT(*) FILTER (WHERE order.status IN ('assigned','picked_up','in_transit'))`,
-                "activeDeliveries"
-            )
-            .addSelect(
-                `COUNT(*) FILTER (WHERE order.status = 'delivered' AND order.updatedAt >= :startOfToday)`,
-                "completedToday"
-            )
-            .addSelect(
-                `COUNT(*) FILTER (WHERE order.status = 'failed' AND order.updatedAt >= :startOfToday)`,
-                "failedToday"
-            )
-            .where("order.companyId = :companyId", {
-                companyId,
-                startOfToday
-            })
-            .getRawOne();
+        try {
+            const raw = await this.orderRepo
+                .createQueryBuilder("order")
+                .select(
+                    "COUNT(*) FILTER (WHERE order.createdAt >= :startOfToday)",
+                    "ordersToday"
+                )
+                .addSelect(
+                    `COUNT(*) FILTER (WHERE order.status IN ('assigned','picked_up','in_transit'))`,
+                    "activeDeliveries"
+                )
+                .addSelect(
+                    `COUNT(*) FILTER (WHERE order.status = 'delivered' AND order.updatedAt >= :startOfToday)`,
+                    "completedToday"
+                )
+                .addSelect(
+                    `COUNT(*) FILTER (WHERE order.status = 'failed' AND order.updatedAt >= :startOfToday)`,
+                    "failedToday"
+                )
+                .where("order.companyId = :companyId", {
+                    companyId,
+                    startOfToday
+                })
+                .getRawOne();
 
-        return {
-            ordersToday: Number(raw.ordersToday),
-            activeDeliveries: Number(raw.activeDeliveries),
-            completedToday: Number(raw.completedToday),
-            failedToday: Number(raw.failedToday)
-        };
+            return {
+                ordersToday: Number(raw.ordersToday),
+                activeDeliveries: Number(raw.activeDeliveries),
+                completedToday: Number(raw.completedToday),
+                failedToday: Number(raw.failedToday)
+            };
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "OrdersService.getKpiCountsForCompany"
+            );
+        }
     }
 
     /**
@@ -737,48 +804,46 @@ export class OrdersService {
     }
 
     /**
- * Retrieves driver names for a list of orders.
- *
- * Finds the drivers assigned to the provided orders within a company and
- * returns a map of user IDs to driver names. Orders without assigned drivers
- * or unavailable driver records are ignored.
- *
- * @param companyId - The unique identifier of the company.
- * @param orders - The orders containing assigned driver references.
- *
- * @returns A map containing driver user IDs and their names.
- */
-private async getDriverNamesForOrders(
-    companyId: string,
-    orders: Order[]
-): Promise<Map<string, string | null>> {
-    const driverIds = [
-        ...new Set(
-            orders
-                .map(o => o.assignedDriverUserId)
-                .filter((id): id is string => !!id)
-        )
-    ];
+     * Retrieves driver names for a list of orders.
+     *
+     * Finds the drivers assigned to the provided orders within a company and
+     * returns a map of user IDs to driver names. Orders without assigned drivers
+     * or unavailable driver records are ignored.
+     *
+     * @param companyId - The unique identifier of the company.
+     * @param orders - The orders containing assigned driver references.
+     *
+     * @returns A map containing driver user IDs and their names.
+     */
+    private async getDriverNamesForOrders(
+        companyId: string,
+        orders: Order[]
+    ): Promise<Map<string, string | null>> {
+        const driverIds = [
+            ...new Set(
+                orders
+                    .map(o => o.assignedDriverUserId)
+                    .filter((id): id is string => !!id)
+            )
+        ];
 
-    if (driverIds.length === 0) {
-        return new Map();
-    }
-
-    const drivers = await this.userRoleRepo.find({
-        where: {
-            companyId,
-            userId: In(driverIds)
-        },
-        select: {
-            userId: true,
-            name: true
+        if (driverIds.length === 0) {
+            return new Map();
         }
-    });
 
-    return new Map(
-        drivers.map(d => [d.userId!, d.name])
-    );
-}
+        const drivers = await this.userRoleRepo.find({
+            where: {
+                companyId,
+                userId: In(driverIds)
+            },
+            select: {
+                userId: true,
+                name: true
+            }
+        });
+
+        return new Map(drivers.map(d => [d.userId!, d.name]));
+    }
 
     private async withTransaction<T>(
         manager: EntityManager | undefined,

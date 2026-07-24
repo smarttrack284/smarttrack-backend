@@ -22,8 +22,11 @@ import { CreateApiKeyDto } from "./dto/create-api-key.dto";
 import { UsersService } from "#/modules/users/users.service";
 import { CreateSavedLocationDto } from "./dto/create-saved-location.dto";
 import { UpdateSavedLocationDto } from "./dto/update-saved-location.dto";
+import { Roles } from "#/common/decorators/roles.decorator";
+import { RolesGuard } from "#/common/guards/roles.guard";
+import { TeamRoleType } from "#/common/types/team-role.type";
 
-@UseGuards(SupabaseAuthGuard)
+@UseGuards(SupabaseAuthGuard, RolesGuard)
 @Controller("companies")
 export class CompaniesController {
     constructor(
@@ -32,6 +35,7 @@ export class CompaniesController {
     ) {}
 
     @Post("register")
+    @Roles() // Anyone
     async registerCompany(
         @CurrentUser() user: AuthenticatedUser,
         @Body() dto: CreateCompanyDto
@@ -40,6 +44,7 @@ export class CompaniesController {
     }
 
     @Post("api-keys")
+    @Roles(TeamRoleType.OWNER)
     async createApiKey(
         @CurrentUser() user: AuthenticatedUser,
         @Body() dto: CreateApiKeyDto
@@ -52,6 +57,7 @@ export class CompaniesController {
     }
 
     @Post("saved-locations")
+    @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
     async createSavedLocation(
         @CurrentUser() user: AuthenticatedUser,
         @Body() dto: CreateSavedLocationDto
@@ -65,6 +71,7 @@ export class CompaniesController {
     }
 
     @Get("saved-locations")
+    @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
     async listSavedLocations(@CurrentUser() user: AuthenticatedUser) {
         const userRole = await this.usersService.getUserRoleByUserId(user.id);
 
@@ -72,6 +79,7 @@ export class CompaniesController {
     }
 
     @Get("saved-locations/:savedLocationId")
+    @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
     async getSavedLocation(
         @CurrentUser() user: AuthenticatedUser,
         @Param("savedLocationId", ParseUUIDPipe)
@@ -86,17 +94,20 @@ export class CompaniesController {
     }
 
     @Get("api-keys")
+    @Roles(TeamRoleType.OWNER)
     async listApiKeys(@CurrentUser() user: AuthenticatedUser) {
         const userRole = await this.usersService.getUserRoleByUserId(user.id);
         return this.companiesService.listApiKeysForCompany(userRole.companyId);
     }
 
     @Get(":companyId")
+    @Roles() // Anyone
     async findCompany(@Param("companyId", ParseUUIDPipe) companyId: string) {
         return this.companiesService.getCompanyById(companyId);
     }
 
     @Patch("saved-locations/:savedLocationId")
+    @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
     async updateSavedLocation(
         @CurrentUser() user: AuthenticatedUser,
         @Param("savedLocationId", ParseUUIDPipe)
@@ -113,6 +124,7 @@ export class CompaniesController {
     }
 
     @Patch("api-keys/:apiKeyId/revoke")
+    @Roles(TeamRoleType.OWNER)
     async revokeApiKey(
         @Param("apiKeyId", ParseUUIDPipe) apiKeyId: string,
         @CurrentUser() user: AuthenticatedUser
@@ -126,6 +138,7 @@ export class CompaniesController {
     }
 
     @Patch(":companyId")
+    @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN)
     async updateCompany(
         @Param("companyId", ParseUUIDPipe) companyId: string,
         @Req() request: FastifyRequest
@@ -172,6 +185,7 @@ export class CompaniesController {
     }
 
     @Delete("saved-locations/:savedLocationId")
+    @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
     async deleteSavedLocation(
         @CurrentUser() user: AuthenticatedUser,
         @Param("savedLocationId", ParseUUIDPipe)
@@ -191,6 +205,7 @@ export class CompaniesController {
 
     // Future changes here ( Delete all users who are in this company when company is deleted)
     @Delete(":companyId")
+    @Roles(TeamRoleType.OWNER)
     async removeCompany(@Param("companyId", ParseUUIDPipe) companyId: string) {
         await this.companiesService.deleteCompany(companyId);
         return { success: true };

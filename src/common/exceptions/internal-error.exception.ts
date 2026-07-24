@@ -18,7 +18,7 @@ import { ErrorCode } from '#/common/constants/error-code-enum';
 export class InternalErrorException extends AppException {
   constructor(internalMessage: string, details?: unknown) {
     super(
-      'Something went wrong on our end. Please try again.',
+      'An unexpected error occurred. Please try again later.',
       HttpStatus.INTERNAL_SERVER_ERROR,
       {
         code: ErrorCode.INTERNAL_ERROR,

@@ -27,7 +27,11 @@ import {
     buildApiKeyPreview
 } from "#/common/utils/api-key.util";
 import { hashApiKey } from "#/common/utils/api-key-hash.util";
-import { SavedLocation } from "#/common/entities/saved-location.entity";
+import { SavedLocation,SavedLocationKind } from "#/common/entities/saved-location.entity";
+import {
+    ErrorHandlerService,
+    rule
+} from "#/common/errors/error-handler.service";
 
 @Injectable()
 export class CompaniesService {
@@ -43,7 +47,8 @@ export class CompaniesService {
         private readonly usersService: UsersService,
         private readonly subscriptionsService: SubscriptionsService,
         private readonly usageService: UsageService,
-        private readonly storageService: StorageService
+        private readonly storageService: StorageService,
+        private readonly errorHandler: ErrorHandlerService
     ) {}
 
     /**
@@ -67,74 +72,78 @@ export class CompaniesService {
         ownerUserId: string,
         manager?: EntityManager
     ) {
-        const supabaseUser =
-            await this.usersService.getUserFromSupabase(ownerUserId);
+        try {
+            const supabaseUser =
+                await this.usersService.getUserFromSupabase(ownerUserId);
 
-        const ownerName =
-            ((supabaseUser.user_metadata as Record<string, unknown> | null)
-                ?.full_name as string | undefined) ??
-            supabaseUser.email ??
-            "Unknown";
+            const ownerName =
+                ((supabaseUser.user_metadata as Record<string, unknown> | null)
+                    ?.full_name as string | undefined) ??
+                supabaseUser.email ??
+                "Unknown";
 
-        return this.withTransaction(manager, async trx => {
-            const companyRepo = trx.getRepository(Company);
+            return this.withTransaction(manager, async trx => {
+                const companyRepo = trx.getRepository(Company);
 
-            // Check if a company with the same email already exists.
-            const existing = await companyRepo.findOne({
-                where: { email: dto.email }
-            });
-
-            if (existing) {
-                throw new ResourceConflictException(
-                    "A company with this email address already exists."
-                );
-            }
-
-            // Create and save the company.
-            const company = companyRepo.create({
-                name: dto.name,
-                email: dto.email,
-                timezone: dto.timezone
-            });
-
-            const saved = await companyRepo.save(company);
-
-            // Provision default subscription and usage tracking.
-            await this.subscriptionsService.createSubscription(
-                saved.id,
-                SubscriptionPlan.FREE,
-                trx
-            );
-
-            await this.usageService.createUsage(saved.id, 1, trx);
-
-            // Assign the creator as the company owner.
-            await this.usersService.createUserRole(
-                {
-                    userId: ownerUserId,
-                    companyId: saved.id,
-                    name: ownerName,
-                    email: supabaseUser.email as string,
-                    joinedAt: new Date(),
-                    status: TeamMemberStatus.ACTIVE,
-                    role: TeamRoleType.OWNER
-                },
-                trx
-            );
-
-            // Create default notification settings for the owner.
-            const userNotificationSettings = trx
-                .getRepository(NotificationSetting)
-                .create({
-                    userId: ownerUserId
+                // Check if a company with the same email already exists.
+                const existing = await companyRepo.findOne({
+                    where: { email: dto.email }
                 });
 
-            await trx
-                .getRepository(NotificationSetting)
-                .save(userNotificationSettings);
+                if (existing) {
+                    throw new ResourceConflictException(
+                        "A company with this email address already exists."
+                    );
+                }
 
-            return this.standardCompanyData(saved);
-        });
+                // Create and save the company.
+                const company = companyRepo.create({
+                    name: dto.name,
+                    email: dto.email,
+                    timezone: dto.timezone
+                });
+
+                const saved = await companyRepo.save(company);
+
+                // Provision default subscription and usage tracking.
+                await this.subscriptionsService.createSubscription(
+                    saved.id,
+                    SubscriptionPlan.FREE,
+                    trx
+                );
+
+                await this.usageService.createUsage(saved.id, 1, trx);
+
+                // Assign the creator as the company owner.
+                await this.usersService.createUserRole(
+                    {
+                        userId: ownerUserId,
+                        companyId: saved.id,
+                        name: ownerName,
+                        email: supabaseUser.email as string,
+                        joinedAt: new Date(),
+                        status: TeamMemberStatus.ACTIVE,
+                        role: TeamRoleType.OWNER
+                    },
+                    trx
+                );
+
+                // Create default notification settings for the owner.
+                const notificationSetting = trx
+                    .getRepository(NotificationSetting)
+                    .create({
+                        userId: ownerUserId
+                    });
+
+                await trx
+                    .getRepository(NotificationSetting)
+                    .save(notificationSetting);
+
+                return this.standardCompanyData(saved);
+            });
+        } catch (error) {
+            this.errorHandler.handle(error, "CompaniesService.createCompany");
+        }
     }
 
     /**
@@ -149,21 +158,25 @@ export class CompaniesService {
      * If the company could not be found.
      */
     async getCompanyById(companyId: string, manager?: EntityManager) {
-        const repo = manager
-            ? manager.getRepository(Company)
-            : this.companyRepo;
+        try {
+            const repo = manager
+                ? manager.getRepository(Company)
+                : this.companyRepo;
 
-        const company = await repo.findOne({
-            where: { id: companyId }
-        });
+            const company = await repo.findOne({
+                where: { id: companyId }
+            });
 
-        if (!company) {
-            throw new ResourceNotFoundException(
-                "The company you are looking for could not be found."
-            );
+            if (!company) {
+                throw new ResourceNotFoundException(
+                    "The company you are looking for could not be found."
+                );
+            }
+
+            return this.standardCompanyData(company);
+        } catch (err) {
+            this.errorHandler.handle(err, "CompaniesService.getCompanyById");
         }
-
-        return this.standardCompanyData(company);
     }
 
     /**
@@ -178,21 +191,25 @@ export class CompaniesService {
      * If no company exists with the provided email address.
      */
     async getCompanyByEmail(email: string, manager?: EntityManager) {
-        const repo = manager
-            ? manager.getRepository(Company)
-            : this.companyRepo;
+        try {
+            const repo = manager
+                ? manager.getRepository(Company)
+                : this.companyRepo;
 
-        const company = await repo.findOne({
-            where: { email }
-        });
+            const company = await repo.findOne({
+                where: { email }
+            });
 
-        if (!company) {
-            throw new ResourceNotFoundException(
-                "The requested company could not be found."
-            );
+            if (!company) {
+                throw new ResourceNotFoundException(
+                    "The requested company could not be found."
+                );
+            }
+
+            return this.standardCompanyData(company);
+        } catch (err) {
+            this.errorHandler.handle(err, "CompaniesService.getCompanyByEmail");
         }
-
-        return this.standardCompanyData(company);
     }
 
     /**
@@ -225,56 +242,60 @@ export class CompaniesService {
         },
         manager?: EntityManager
     ) {
-        let logoUrl: string | undefined;
+        try {
+            let logoUrl: string | undefined;
 
-        if (logoFile) {
-            const path = StoragePath.companyLogo(
-                companyId,
-                `logo.${logoFile.extension}`
-            );
-
-            logoUrl = await this.storageService.uploadFile({
-                path,
-                buffer: logoFile.buffer,
-                contentType: logoFile.contentType
-            });
-        }
-
-        return this.withTransaction(manager, async trx => {
-            const repo = trx.getRepository(Company);
-
-            const company = await repo.findOne({
-                where: { id: companyId }
-            });
-
-            if (!company) {
-                throw new ResourceNotFoundException(
-                    "The company you are trying to update could not be found."
+            if (logoFile) {
+                const path = StoragePath.companyLogo(
+                    companyId,
+                    `logo.${logoFile.extension}`
                 );
+
+                logoUrl = await this.storageService.uploadFile({
+                    path,
+                    buffer: logoFile.buffer,
+                    contentType: logoFile.contentType
+                });
             }
 
-            if (dto.email && dto.email !== company.email) {
-                const emailTaken = await repo.findOne({
-                    where: { email: dto.email }
+            return this.withTransaction(manager, async trx => {
+                const repo = trx.getRepository(Company);
+
+                const company = await repo.findOne({
+                    where: { id: companyId }
                 });
 
-                if (emailTaken) {
-                    throw new ResourceConflictException(
-                        "A company with this email address already exists."
+                if (!company) {
+                    throw new ResourceNotFoundException(
+                        "The company you are trying to update could not be found."
                     );
                 }
-            }
 
-            Object.assign(company, dto);
+                if (dto.email && dto.email !== company.email) {
+                    const emailTaken = await repo.findOne({
+                        where: { email: dto.email }
+                    });
 
-            if (logoUrl) {
-                company.logoUrl = logoUrl;
-            }
+                    if (emailTaken) {
+                        throw new ResourceConflictException(
+                            "A company with this email address already exists."
+                        );
+                    }
+                }
 
-            const saved = await repo.save(company);
+                Object.assign(company, dto);
 
-            return this.standardCompanyData(saved);
-        });
+                if (logoUrl) {
+                    company.logoUrl = logoUrl;
+                }
+
+                const saved = await repo.save(company);
+
+                return this.standardCompanyData(saved);
+            });
+        } catch (err) {
+            this.errorHandler.handle(err, "CompaniesService.updateCompany");
+        }
     }
 
     /**
@@ -295,45 +316,49 @@ export class CompaniesService {
         companyId: string,
         manager?: EntityManager
     ): Promise<void> {
-        const affectedUserIds = await this.withTransaction(
-            manager,
-            async trx => {
-                const repo = trx.getRepository(Company);
+        try {
+            const affectedUserIds = await this.withTransaction(
+                manager,
+                async trx => {
+                    const repo = trx.getRepository(Company);
 
-                const company = await repo.findOne({
-                    where: { id: companyId }
-                });
+                    const company = await repo.findOne({
+                        where: { id: companyId }
+                    });
 
-                if (!company) {
-                    throw new ResourceNotFoundException(
-                        "The company you are trying to delete could not be found."
-                    );
+                    if (!company) {
+                        throw new ResourceNotFoundException(
+                            "The company you are trying to delete could not be found."
+                        );
+                    }
+
+                    const memberships = await trx.getRepository(UserRole).find({
+                        where: { companyId },
+                        select: { userId: true }
+                    });
+
+                    const userIds = memberships
+                        .map(m => m.userId)
+                        .filter((id): id is string => !!id);
+
+                    // Database cascade rules handle removal of related records:
+                    // UserRole, NotificationSetting, SavedLocation, ApiKey,
+                    // Order, and Trip records.
+                    await repo.remove(company);
+
+                    return userIds;
                 }
+            );
 
-                const memberships = await trx.getRepository(UserRole).find({
-                    where: { companyId },
-                    select: { userId: true }
-                });
+            await this.storageService.deleteFolder(
+                StoragePath.companyRoot(companyId)
+            );
 
-                const userIds = memberships
-                    .map(m => m.userId)
-                    .filter((id): id is string => !!id);
-
-                // Database cascade rules handle removal of related records:
-                // UserRole, NotificationSetting, SavedLocation, ApiKey,
-                // Order, and Trip records.
-                await repo.remove(company);
-
-                return userIds;
+            for (const userId of affectedUserIds) {
+                await this.usersService.deleteSupabaseUser(userId);
             }
-        );
-
-        await this.storageService.deleteFolder(
-            StoragePath.companyRoot(companyId)
-        );
-
-        for (const userId of affectedUserIds) {
-            await this.usersService.deleteSupabaseUser(userId);
+        } catch (err) {
+            this.errorHandler.handle(err, "CompaniesService.deleteCompany");
         }
     }
 
@@ -362,45 +387,52 @@ export class CompaniesService {
         keyPreview: string;
         createdAt: Date;
     }> {
-        return this.withTransaction(undefined, async trx => {
-            const companyRepo = trx.getRepository(Company);
-            const apiKeyRepo = trx.getRepository(ApiKey);
+        try {
+            return this.withTransaction(undefined, async trx => {
+                const companyRepo = trx.getRepository(Company);
+                const apiKeyRepo = trx.getRepository(ApiKey);
 
-            const company = await companyRepo.findOne({
-                where: { id: companyId }
+                const company = await companyRepo.findOne({
+                    where: { id: companyId }
+                });
+
+                if (!company) {
+                    throw new ResourceNotFoundException(
+                        "The company associated with this API key could not be found."
+                    );
+                }
+
+                const plainKey = generateApiKey("live");
+
+                const keyHash = hashApiKey(plainKey);
+
+                const keyPreview = buildApiKeyPreview(plainKey);
+
+                const apiKey = apiKeyRepo.create({
+                    companyId,
+                    name: dto.name,
+                    keyHash,
+                    keyPreview,
+                    lastUsedAt: null,
+                    revokedAt: null
+                });
+
+                const savedApiKey = await apiKeyRepo.save(apiKey);
+
+                return {
+                    id: savedApiKey.id,
+                    name: savedApiKey.name,
+                    key: plainKey,
+                    keyPreview: savedApiKey.keyPreview,
+                    createdAt: savedApiKey.createdAt
+                };
             });
-
-            if (!company) {
-                throw new ResourceNotFoundException(
-                    "The company associated with this API key could not be found."
-                );
-            }
-
-            const plainKey = generateApiKey("live");
-
-            const keyHash = hashApiKey(plainKey);
-
-            const keyPreview = buildApiKeyPreview(plainKey);
-
-            const apiKey = apiKeyRepo.create({
-                companyId,
-                name: dto.name,
-                keyHash,
-                keyPreview,
-                lastUsedAt: null,
-                revokedAt: null
-            });
-
-            const savedApiKey = await apiKeyRepo.save(apiKey);
-
-            return {
-                id: savedApiKey.id,
-                name: savedApiKey.name,
-                key: plainKey,
-                keyPreview: savedApiKey.keyPreview,
-                createdAt: savedApiKey.createdAt
-            };
-        });
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "CompaniesService.createApiKeyForCompany"
+            );
+        }
     }
 
     /**
@@ -423,21 +455,28 @@ export class CompaniesService {
             createdAt: Date;
         }[]
     > {
-        const apiKeys = await this.apiKeyRepo.find({
-            where: { companyId },
-            order: {
-                createdAt: "DESC"
-            }
-        });
+        try {
+            const apiKeys = await this.apiKeyRepo.find({
+                where: { companyId },
+                order: {
+                    createdAt: "DESC"
+                }
+            });
 
-        return apiKeys.map(apiKey => ({
-            id: apiKey.id,
-            name: apiKey.name,
-            keyPreview: apiKey.keyPreview,
-            lastUsedAt: apiKey.lastUsedAt,
-            revokedAt: apiKey.revokedAt,
-            createdAt: apiKey.createdAt
-        }));
+            return apiKeys.map(apiKey => ({
+                id: apiKey.id,
+                name: apiKey.name,
+                keyPreview: apiKey.keyPreview,
+                lastUsedAt: apiKey.lastUsedAt,
+                revokedAt: apiKey.revokedAt,
+                createdAt: apiKey.createdAt
+            }));
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "CompaniesService.listApiKeysForCompany"
+            );
+        }
     }
 
     /**
@@ -466,39 +505,46 @@ export class CompaniesService {
         keyPreview: string;
         revokedAt: Date;
     }> {
-        return this.withTransaction(undefined, async trx => {
-            const apiKeyRepo = trx.getRepository(ApiKey);
+        try {
+            return this.withTransaction(undefined, async trx => {
+                const apiKeyRepo = trx.getRepository(ApiKey);
 
-            const apiKey = await apiKeyRepo.findOne({
-                where: {
-                    id: apiKeyId,
-                    companyId
+                const apiKey = await apiKeyRepo.findOne({
+                    where: {
+                        id: apiKeyId,
+                        companyId
+                    }
+                });
+
+                if (!apiKey) {
+                    throw new ResourceNotFoundException(
+                        "The requested API key could not be found."
+                    );
                 }
+
+                if (apiKey.revokedAt) {
+                    throw new ResourceConflictException(
+                        "This API key has already been revoked."
+                    );
+                }
+
+                apiKey.revokedAt = new Date();
+
+                const saved = await apiKeyRepo.save(apiKey);
+
+                return {
+                    id: saved.id,
+                    name: saved.name,
+                    keyPreview: saved.keyPreview,
+                    revokedAt: saved.revokedAt!
+                };
             });
-
-            if (!apiKey) {
-                throw new ResourceNotFoundException(
-                    "The requested API key could not be found."
-                );
-            }
-
-            if (apiKey.revokedAt) {
-                throw new ResourceConflictException(
-                    "This API key has already been revoked."
-                );
-            }
-
-            apiKey.revokedAt = new Date();
-
-            const saved = await apiKeyRepo.save(apiKey);
-
-            return {
-                id: saved.id,
-                name: saved.name,
-                keyPreview: saved.keyPreview,
-                revokedAt: saved.revokedAt!
-            };
-        });
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "CompaniesService.revokeApiKeyForCompany"
+            );
+        }
     }
 
     /**
@@ -527,41 +573,48 @@ export class CompaniesService {
         kind: SavedLocationKind | null;
         createdAt: Date;
     }> {
-        return this.withTransaction(undefined, async trx => {
-            const companyRepo = trx.getRepository(Company);
-            const savedLocationRepo = trx.getRepository(SavedLocation);
+        try {
+            return this.withTransaction(undefined, async trx => {
+                const companyRepo = trx.getRepository(Company);
+                const savedLocationRepo = trx.getRepository(SavedLocation);
 
-            const company = await companyRepo.findOne({
-                where: { id: companyId }
+                const company = await companyRepo.findOne({
+                    where: { id: companyId }
+                });
+
+                if (!company) {
+                    throw new ResourceNotFoundException(
+                        "The requested company could not be found."
+                    );
+                }
+
+                const savedLocation = savedLocationRepo.create({
+                    companyId,
+                    label: dto.label,
+                    address: dto.address,
+                    lat: dto.lat,
+                    lng: dto.lng,
+                    kind: dto.kind ?? null
+                });
+
+                const saved = await savedLocationRepo.save(savedLocation);
+
+                return {
+                    id: saved.id,
+                    label: saved.label,
+                    address: saved.address,
+                    lat: saved.lat,
+                    lng: saved.lng,
+                    kind: saved.kind,
+                    createdAt: saved.createdAt
+                };
             });
-
-            if (!company) {
-                throw new ResourceNotFoundException(
-                    "The requested company could not be found."
-                );
-            }
-
-            const savedLocation = savedLocationRepo.create({
-                companyId,
-                label: dto.label,
-                address: dto.address,
-                lat: dto.lat,
-                lng: dto.lng,
-                kind: dto.kind ?? null
-            });
-
-            const saved = await savedLocationRepo.save(savedLocation);
-
-            return {
-                id: saved.id,
-                label: saved.label,
-                address: saved.address,
-                lat: saved.lat,
-                lng: saved.lng,
-                kind: saved.kind,
-                createdAt: saved.createdAt
-            };
-        });
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "CompaniesService.createSavedLocation"
+            );
+        }
     }
 
     /**
@@ -584,24 +637,31 @@ export class CompaniesService {
             createdAt: Date;
         }[]
     > {
-        const savedLocations = await this.savedLocationRepo.find({
-            where: {
-                companyId
-            },
-            order: {
-                label: "ASC"
-            }
-        });
+        try {
+            const savedLocations = await this.savedLocationRepo.find({
+                where: {
+                    companyId
+                },
+                order: {
+                    label: "ASC"
+                }
+            });
 
-        return savedLocations.map(location => ({
-            id: location.id,
-            label: location.label,
-            address: location.address,
-            lat: location.lat,
-            lng: location.lng,
-            kind: location.kind,
-            createdAt: location.createdAt
-        }));
+            return savedLocations.map(location => ({
+                id: location.id,
+                label: location.label,
+                address: location.address,
+                lat: location.lat,
+                lng: location.lng,
+                kind: location.kind,
+                createdAt: location.createdAt
+            }));
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "CompaniesService.listSavedLocations"
+            );
+        }
     }
 
     /**
@@ -627,28 +687,32 @@ export class CompaniesService {
         kind: SavedLocationKind | null;
         createdAt: Date;
     }> {
-        const location = await this.savedLocationRepo.findOne({
-            where: {
-                id: savedLocationId,
-                companyId
+        try {
+            const location = await this.savedLocationRepo.findOne({
+                where: {
+                    id: savedLocationId,
+                    companyId
+                }
+            });
+
+            if (!location) {
+                throw new ResourceNotFoundException(
+                    "The requested saved location could not be found."
+                );
             }
-        });
 
-        if (!location) {
-            throw new ResourceNotFoundException(
-                "The requested saved location could not be found."
-            );
+            return {
+                id: location.id,
+                label: location.label,
+                address: location.address,
+                lat: location.lat,
+                lng: location.lng,
+                kind: location.kind,
+                createdAt: location.createdAt
+            };
+        } catch (err) {
+            this.errorHandler.handle(err, "CompaniesService.getSavedLocation");
         }
-
-        return {
-            id: location.id,
-            label: location.label,
-            address: location.address,
-            lat: location.lat,
-            lng: location.lng,
-            kind: location.kind,
-            createdAt: location.createdAt
-        };
     }
 
     /**
@@ -680,41 +744,48 @@ export class CompaniesService {
         createdAt: Date;
         updatedAt: Date;
     }> {
-        return this.withTransaction(undefined, async trx => {
-            const savedLocationRepo = trx.getRepository(SavedLocation);
+        try {
+            return this.withTransaction(undefined, async trx => {
+                const savedLocationRepo = trx.getRepository(SavedLocation);
 
-            const location = await savedLocationRepo.findOne({
-                where: {
-                    id: savedLocationId,
-                    companyId
+                const location = await savedLocationRepo.findOne({
+                    where: {
+                        id: savedLocationId,
+                        companyId
+                    }
+                });
+
+                if (!location) {
+                    throw new ResourceNotFoundException(
+                        "The requested saved location could not be found."
+                    );
                 }
+
+                location.label = dto.label ?? location.label;
+                location.address = dto.address ?? location.address;
+                location.lat = dto.lat ?? location.lat;
+                location.lng = dto.lng ?? location.lng;
+                location.kind = dto.kind ?? location.kind;
+
+                const updated = await savedLocationRepo.save(location);
+
+                return {
+                    id: updated.id,
+                    label: updated.label,
+                    address: updated.address,
+                    lat: updated.lat,
+                    lng: updated.lng,
+                    kind: updated.kind,
+                    createdAt: updated.createdAt,
+                    updatedAt: updated.updatedAt
+                };
             });
-
-            if (!location) {
-                throw new ResourceNotFoundException(
-                    "The requested saved location could not be found."
-                );
-            }
-
-            location.label = dto.label;
-            location.address = dto.address;
-            location.lat = dto.lat;
-            location.lng = dto.lng;
-            location.kind = dto.kind ?? null;
-
-            const updated = await savedLocationRepo.save(location);
-
-            return {
-                id: updated.id,
-                label: updated.label,
-                address: updated.address,
-                lat: updated.lat,
-                lng: updated.lng,
-                kind: updated.kind,
-                createdAt: updated.createdAt,
-                updatedAt: updated.updatedAt
-            };
-        });
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "CompaniesService.updateSavedLocation"
+            );
+        }
     }
 
     /**
@@ -733,24 +804,31 @@ export class CompaniesService {
         companyId: string,
         savedLocationId: string
     ): Promise<void> {
-        return this.withTransaction(undefined, async trx => {
-            const savedLocationRepo = trx.getRepository(SavedLocation);
+        try {
+            return this.withTransaction(undefined, async trx => {
+                const savedLocationRepo = trx.getRepository(SavedLocation);
 
-            const location = await savedLocationRepo.findOne({
-                where: {
-                    id: savedLocationId,
-                    companyId
+                const location = await savedLocationRepo.findOne({
+                    where: {
+                        id: savedLocationId,
+                        companyId
+                    }
+                });
+
+                if (!location) {
+                    throw new ResourceNotFoundException(
+                        "The requested saved location could not be found."
+                    );
                 }
+
+                await savedLocationRepo.remove(location);
             });
-
-            if (!location) {
-                throw new ResourceNotFoundException(
-                    "The requested saved location could not be found."
-                );
-            }
-
-            await savedLocationRepo.remove(location);
-        });
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "CompaniesService.deleteSavedLocation"
+            );
+        }
     }
 
     /**

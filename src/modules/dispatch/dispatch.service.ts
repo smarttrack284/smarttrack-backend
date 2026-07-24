@@ -33,6 +33,7 @@ import { StoragePath } from "#/common/storage/storage-path.util";
 import { CompleteStopDto } from "./dto/complete-stop.dto";
 import { UserRole } from "#/common/entities/user-role.entity";
 import { deriveTripActivity } from "#/common/utils/trip-activity.util";
+import { ErrorHandlerService } from "#/common/errors/error-handler.service";
 
 export type TripDriver = {
     id: string;
@@ -61,7 +62,8 @@ export class DispatchService {
         @Inject(forwardRef(() => TrackingService))
         private readonly trackingService: TrackingService,
         private readonly cache: RedisCacheService,
-        private readonly storageService: StorageService
+        private readonly storageService: StorageService,
+        private readonly errorHandler: ErrorHandlerService
     ) {}
 
     /**
@@ -90,69 +92,80 @@ export class DispatchService {
         companyId: string,
         dispatcherUserId: string,
         dto: DispatchOrdersDto
-    ): Promise<Trip> {
-        const driverRole = await this.usersService.getUserRole(
-            dto.driverUserId,
-            companyId
-        );
-
-        if (driverRole.role !== TeamRoleType.DRIVER) {
-            throw new BadRequestAppException(
-                "The selected user is not available as a driver."
+    ): Promise<void> {
+        try {
+            const driverRole = await this.usersService.getUserRole(
+                dto.driverUserId,
+                companyId
             );
-        }
 
-        const savedTrip = await this.withTransaction(undefined, async trx => {
-            const trip = trx.getRepository(Trip).create({
-                companyId,
-                driverUserId: dto.driverUserId,
-                createdByUserId: dispatcherUserId
-            });
-
-            const trip_ = await trx.getRepository(Trip).save(trip);
-
-            const stops: TripStop[] = [];
-
-            for (let i = 0; i < dto.orderIds.length; i++) {
-                const orderId = dto.orderIds[i];
-
-                const order = await this.ordersService.getOrderByIdForCompany(
-                    orderId,
-                    companyId,
-                    trx
+            if (driverRole.role !== TeamRoleType.DRIVER) {
+                throw new BadRequestAppException(
+                    "The selected user is not available as a driver."
                 );
-
-                if (order.status !== OrderStatus.PENDING) {
-                    throw new BadRequestAppException(
-                        "One or more selected orders are no longer available for dispatch."
-                    );
-                }
-
-                await this.ordersService.assignDriverForCompany(
-                    orderId,
-                    companyId,
-                    dto.driverUserId,
-                    trx
-                );
-
-                const stop = trx.getRepository(TripStop).create({
-                    tripId: trip_.id,
-                    orderId,
-                    sequence: i + 1,
-                    status: StopStatus.PENDING
-                });
-
-                stops.push(await trx.getRepository(TripStop).save(stop));
             }
 
-            trip_.stops = stops;
+            const savedTrip = await this.withTransaction(
+                undefined,
+                async trx => {
+                    const trip = trx.getRepository(Trip).create({
+                        companyId,
+                        driverUserId: dto.driverUserId,
+                        createdByUserId: dispatcherUserId
+                    });
 
-            return trip_;
-        });
+                    const trip_ = await trx.getRepository(Trip).save(trip);
 
-        await this.trackingService.broadcastTripUpdate(savedTrip.id);
+                    const stops: TripStop[] = [];
 
-        return savedTrip;
+                    for (let i = 0; i < dto.orderIds.length; i++) {
+                        const orderId = dto.orderIds[i];
+
+                        const order =
+                            await this.ordersService.getOrderByIdForCompany(
+                                orderId,
+                                companyId,
+                                trx
+                            );
+
+                        if (order.status !== OrderStatus.PENDING) {
+                            throw new BadRequestAppException(
+                                "One or more selected orders are no longer available for dispatch."
+                            );
+                        }
+
+                        await this.ordersService.assignDriverForCompany(
+                            orderId,
+                            companyId,
+                            dto.driverUserId,
+                            trx
+                        );
+
+                        const stop = trx.getRepository(TripStop).create({
+                            tripId: trip_.id,
+                            orderId,
+                            sequence: i + 1,
+                            status: StopStatus.PENDING
+                        });
+
+                        stops.push(
+                            await trx.getRepository(TripStop).save(stop)
+                        );
+                    }
+
+                    trip_.stops = stops;
+
+                    return trip_;
+                }
+            );
+
+            await this.trackingService.broadcastTripUpdate(savedTrip.id);
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "DispatchService.dispatchOrdersToDriver"
+            );
+        }
     }
 
     /**
@@ -178,34 +191,38 @@ export class DispatchService {
         companyId: string,
         manager?: EntityManager
     ): Promise<Trip> {
-        const repo = manager ? manager.getRepository(Trip) : this.tripRepo;
+        try {
+            const repo = manager ? manager.getRepository(Trip) : this.tripRepo;
 
-        const trip = await repo.findOne({
-            where: { id: tripId },
-            relations: {
-                stops: {
-                    order: {
-                        items: true
+            const trip = await repo.findOne({
+                where: { id: tripId },
+                relations: {
+                    stops: {
+                        order: {
+                            items: true
+                        }
                     }
                 }
+            });
+
+            if (!trip) {
+                throw new ResourceNotFoundException(
+                    "The trip you are looking for could not be found."
+                );
             }
-        });
 
-        if (!trip) {
-            throw new ResourceNotFoundException(
-                "The trip you are looking for could not be found."
-            );
+            if (trip.companyId !== companyId) {
+                throw new ForbiddenAppException(
+                    "You do not have permission to access this trip."
+                );
+            }
+
+            trip.stops.sort((a, b) => a.sequence - b.sequence);
+
+            return trip;
+        } catch (err) {
+            this.errorHandler.handle(err, "DispatchService.getTripForCompany");
         }
-
-        if (trip.companyId !== companyId) {
-            throw new ForbiddenAppException(
-                "You do not have permission to access this trip."
-            );
-        }
-
-        trip.stops.sort((a, b) => a.sequence - b.sequence);
-
-        return trip;
     }
 
     /**
@@ -257,43 +274,48 @@ export class DispatchService {
         tripId: string,
         stopId: string,
         companyId: string
-    ): Promise<TripStop> {
-        const savedStop = await this.withTransaction(undefined, async trx => {
-            const { trip, stop } = await this.getStopForCompany(
-                tripId,
-                stopId,
-                companyId,
-                trx
+    ): Promise<void> {
+        try {
+            const savedStop = await this.withTransaction(
+                undefined,
+                async trx => {
+                    const { trip, stop } = await this.getStopForCompany(
+                        tripId,
+                        stopId,
+                        companyId,
+                        trx
+                    );
+
+                    if (stop.status !== StopStatus.PENDING) {
+                        throw new BadRequestAppException(
+                            "This stop has already been processed."
+                        );
+                    }
+
+                    await this.advanceOrderTo(
+                        stop.orderId,
+                        companyId,
+                        OrderStatus.IN_TRANSIT,
+                        trx
+                    );
+
+                    if (!trip.startedAt) {
+                        trip.startedAt = new Date();
+
+                        await trx.getRepository(Trip).save(trip);
+                    }
+
+                    stop.status = StopStatus.ARRIVED;
+                    stop.arrivedAt = new Date();
+
+                    return trx.getRepository(TripStop).save(stop);
+                }
             );
 
-            if (stop.status !== StopStatus.PENDING) {
-                throw new BadRequestAppException(
-                    "This stop has already been processed."
-                );
-            }
-
-            await this.advanceOrderTo(
-                stop.orderId,
-                companyId,
-                OrderStatus.IN_TRANSIT,
-                trx
-            );
-
-            if (!trip.startedAt) {
-                trip.startedAt = new Date();
-
-                await trx.getRepository(Trip).save(trip);
-            }
-
-            stop.status = StopStatus.ARRIVED;
-            stop.arrivedAt = new Date();
-
-            return trx.getRepository(TripStop).save(stop);
-        });
-
-        await this.trackingService.broadcastTripUpdate(tripId);
-
-        return savedStop;
+            await this.trackingService.broadcastTripUpdate(tripId);
+        } catch (err) {
+            this.errorHandler.handle(err, "DispatchService.arriveAtStop");
+        }
     }
 
     /**
@@ -339,98 +361,105 @@ export class DispatchService {
             };
         }
     ): Promise<TripStop> {
-        const requiresPhoto =
-            dto.podMethod === ProofOfDeliveryMethod.PHOTO ||
-            dto.podMethod === ProofOfDeliveryMethod.PHOTO_AND_SIGNATURE;
+        try {
+            const requiresPhoto =
+                dto.podMethod === ProofOfDeliveryMethod.PHOTO ||
+                dto.podMethod === ProofOfDeliveryMethod.PHOTO_AND_SIGNATURE;
 
-        const requiresSignature =
-            dto.podMethod === ProofOfDeliveryMethod.SIGNATURE ||
-            dto.podMethod === ProofOfDeliveryMethod.PHOTO_AND_SIGNATURE;
+            const requiresSignature =
+                dto.podMethod === ProofOfDeliveryMethod.SIGNATURE ||
+                dto.podMethod === ProofOfDeliveryMethod.PHOTO_AND_SIGNATURE;
 
-        if (requiresPhoto && !files.photo) {
-            throw new BadRequestAppException(
-                "A delivery photo is required to complete this delivery."
-            );
-        }
-
-        if (requiresSignature && !files.signature) {
-            throw new BadRequestAppException(
-                "A signature is required to complete this delivery."
-            );
-        }
-
-        let podPhotoUrl: string | undefined;
-        let podSignatureUrl: string | undefined;
-
-        if (files.photo) {
-            podPhotoUrl = await this.storageService.uploadFile({
-                path: StoragePath.proofOfDelivery(
-                    companyId,
-                    stopId,
-                    `photo.${files.photo.extension}`
-                ),
-                buffer: files.photo.buffer,
-                contentType: files.photo.contentType
-            });
-        }
-
-        if (files.signature) {
-            podSignatureUrl = await this.storageService.uploadFile({
-                path: StoragePath.proofOfDelivery(
-                    companyId,
-                    stopId,
-                    `signature.${files.signature.extension}`
-                ),
-                buffer: files.signature.buffer,
-                contentType: files.signature.contentType
-            });
-        }
-
-        const savedStop = await this.withTransaction(undefined, async trx => {
-            const { stop } = await this.getStopForCompany(
-                tripId,
-                stopId,
-                companyId,
-                trx
-            );
-
-            if (stop.status !== StopStatus.ARRIVED) {
+            if (requiresPhoto && !files.photo) {
                 throw new BadRequestAppException(
-                    "This delivery cannot be completed yet."
+                    "A delivery photo is required to complete this delivery."
                 );
             }
 
-            await this.advanceOrderTo(
-                stop.orderId,
-                companyId,
-                OrderStatus.IN_TRANSIT,
-                trx
+            if (requiresSignature && !files.signature) {
+                throw new BadRequestAppException(
+                    "A signature is required to complete this delivery."
+                );
+            }
+
+            let podPhotoUrl: string | undefined;
+            let podSignatureUrl: string | undefined;
+
+            if (files.photo) {
+                podPhotoUrl = await this.storageService.uploadFile({
+                    path: StoragePath.proofOfDelivery(
+                        companyId,
+                        stopId,
+                        `photo.${files.photo.extension}`
+                    ),
+                    buffer: files.photo.buffer,
+                    contentType: files.photo.contentType
+                });
+            }
+
+            if (files.signature) {
+                podSignatureUrl = await this.storageService.uploadFile({
+                    path: StoragePath.proofOfDelivery(
+                        companyId,
+                        stopId,
+                        `signature.${files.signature.extension}`
+                    ),
+                    buffer: files.signature.buffer,
+                    contentType: files.signature.contentType
+                });
+            }
+
+            const savedStop = await this.withTransaction(
+                undefined,
+                async trx => {
+                    const { stop } = await this.getStopForCompany(
+                        tripId,
+                        stopId,
+                        companyId,
+                        trx
+                    );
+
+                    if (stop.status !== StopStatus.ARRIVED) {
+                        throw new BadRequestAppException(
+                            "This delivery cannot be completed yet."
+                        );
+                    }
+
+                    await this.advanceOrderTo(
+                        stop.orderId,
+                        companyId,
+                        OrderStatus.IN_TRANSIT,
+                        trx
+                    );
+
+                    await this.ordersService.updateOrderStatusForCompany(
+                        stop.orderId,
+                        companyId,
+                        {
+                            status: OrderStatus.DELIVERED
+                        },
+                        trx
+                    );
+
+                    stop.status = StopStatus.COMPLETED;
+                    stop.completedAt = new Date();
+                    stop.podMethod = dto.podMethod;
+                    stop.podPhotoUrl = podPhotoUrl ?? null;
+                    stop.podSignatureUrl = podSignatureUrl ?? null;
+                    stop.podRecipientName = dto.recipientName ?? null;
+                    stop.podNotes = dto.notes ?? null;
+                    stop.podCapturedAt = new Date();
+
+                    return trx.getRepository(TripStop).save(stop);
+                }
             );
 
-            await this.ordersService.updateOrderStatusForCompany(
-                stop.orderId,
-                companyId,
-                {
-                    status: OrderStatus.DELIVERED
-                },
-                trx
-            );
+            await this.trackingService.broadcastTripUpdate(tripId);
 
-            stop.status = StopStatus.COMPLETED;
-            stop.completedAt = new Date();
-            stop.podMethod = dto.podMethod;
-            stop.podPhotoUrl = podPhotoUrl ?? null;
-            stop.podSignatureUrl = podSignatureUrl ?? null;
-            stop.podRecipientName = dto.recipientName ?? null;
-            stop.podNotes = dto.notes ?? null;
-            stop.podCapturedAt = new Date();
-
-            return trx.getRepository(TripStop).save(stop);
-        });
-
-        await this.trackingService.broadcastTripUpdate(tripId);
-
-        return savedStop;
+            return savedStop;
+        } catch (err) {
+            this.errorHandler.handle(err, "DispatchService.completedStop");
+        }
     }
 
     /**
@@ -461,49 +490,56 @@ export class DispatchService {
         companyId: string,
         dto: SkipStopDto
     ): Promise<TripStop> {
-        const savedStop = await this.withTransaction(undefined, async trx => {
-            const { stop } = await this.getStopForCompany(
-                tripId,
-                stopId,
-                companyId,
-                trx
+        try {
+            const savedStop = await this.withTransaction(
+                undefined,
+                async trx => {
+                    const { stop } = await this.getStopForCompany(
+                        tripId,
+                        stopId,
+                        companyId,
+                        trx
+                    );
+
+                    if (
+                        stop.status === StopStatus.COMPLETED ||
+                        stop.status === StopStatus.SKIPPED
+                    ) {
+                        throw new BadRequestAppException(
+                            "This delivery stop can no longer be skipped."
+                        );
+                    }
+
+                    await this.advanceOrderTo(
+                        stop.orderId,
+                        companyId,
+                        OrderStatus.IN_TRANSIT,
+                        trx
+                    );
+
+                    await this.ordersService.updateOrderStatusForCompany(
+                        stop.orderId,
+                        companyId,
+                        {
+                            status: OrderStatus.FAILED
+                        },
+                        trx
+                    );
+
+                    stop.status = StopStatus.SKIPPED;
+                    stop.skipReason = dto.reason;
+                    stop.skipNote = dto.note ?? null;
+
+                    return trx.getRepository(TripStop).save(stop);
+                }
             );
 
-            if (
-                stop.status === StopStatus.COMPLETED ||
-                stop.status === StopStatus.SKIPPED
-            ) {
-                throw new BadRequestAppException(
-                    "This delivery stop can no longer be skipped."
-                );
-            }
+            await this.trackingService.broadcastTripUpdate(tripId);
 
-            await this.advanceOrderTo(
-                stop.orderId,
-                companyId,
-                OrderStatus.IN_TRANSIT,
-                trx
-            );
-
-            await this.ordersService.updateOrderStatusForCompany(
-                stop.orderId,
-                companyId,
-                {
-                    status: OrderStatus.FAILED
-                },
-                trx
-            );
-
-            stop.status = StopStatus.SKIPPED;
-            stop.skipReason = dto.reason;
-            stop.skipNote = dto.note ?? null;
-
-            return trx.getRepository(TripStop).save(stop);
-        });
-
-        await this.trackingService.broadcastTripUpdate(tripId);
-
-        return savedStop;
+            return savedStop;
+        } catch (err) {
+            this.errorHandler.handle(err, "DispatchService.skipStop");
+        }
     }
 
     /**

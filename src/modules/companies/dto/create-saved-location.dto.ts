@@ -2,7 +2,6 @@ import {
     IsString,
     IsOptional,
     IsNotEmpty,
-    IsDouble,
     MaxLength,
     IsEnum,
     IsLatitude,

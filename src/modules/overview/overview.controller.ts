@@ -1,26 +1,30 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
-import { SupabaseAuthGuard } from '#/common/guards/supabase-auth.guard';
-import { CurrentUser } from '#/common/decorators/current-user.decorator';
-import type { AuthenticatedUser } from '#/common/types/authenticated-user.type';
-import { UsersService } from '#/modules/users/users.service';
-import { OverviewService } from './overview.service';
+import { Controller, Get, UseGuards } from "@nestjs/common";
+import { SupabaseAuthGuard } from "#/common/guards/supabase-auth.guard";
+import { CurrentUser } from "#/common/decorators/current-user.decorator";
+import type { AuthenticatedUser } from "#/common/types/authenticated-user.type";
+import { UsersService } from "#/modules/users/users.service";
+import { OverviewService } from "./overview.service";
+import { Roles } from "#/common/decorators/roles.decorator";
+import { RolesGuard } from "#/common/guards/roles.guard";
+import { TeamRoleType } from "#/common/types/team-role.type";
 
-@UseGuards(SupabaseAuthGuard)
-@Controller('overview')
+@UseGuards(SupabaseAuthGuard, RolesGuard)
+@Controller("overview")
 export class OverviewController {
-  constructor(
-    private readonly overviewService: OverviewService,
-    private readonly usersService: UsersService,
-  ) {}
+    constructor(
+        private readonly overviewService: OverviewService,
+        private readonly usersService: UsersService
+    ) {}
 
-  @Get()
-  async getOverview(@CurrentUser() user: AuthenticatedUser) {
-    const userRole = await this.usersService.getUserRoleByUserId(user.id);
-    const [kpis, activity, recentOrders] = await Promise.all([
-      this.overviewService.getKpis(userRole.companyId),
-      this.overviewService.getRecentActivity(userRole.companyId),
-      this.overviewService.getRecentOrders(userRole.companyId),
-    ]);
-    return { kpis, activity, recentOrders };
-  }
+    @Get()
+    @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
+    async getOverview(@CurrentUser() user: AuthenticatedUser) {
+        const userRole = await this.usersService.getUserRoleByUserId(user.id);
+        const [kpis, activity, recentOrders] = await Promise.all([
+            this.overviewService.getKpis(userRole.companyId),
+            this.overviewService.getRecentActivity(userRole.companyId),
+            this.overviewService.getRecentOrders(userRole.companyId)
+        ]);
+        return { kpis, activity, recentOrders };
+    }
 }
