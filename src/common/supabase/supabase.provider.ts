@@ -11,7 +11,7 @@ export const SupabaseAdminProvider: Provider = {
 
   useFactory: (config: ConfigService): SupabaseClient => {
     const url = config.getOrThrow<string>('SUPABASE_URL');
-    const serviceRoleKey = config.getOrThrow<string>('SUPABASE_SECRET_KEY');
+    const serviceRoleKey = config.getOrThrow<string>('SUPABASE_SECRET_ROLE_KEY');
 
     return createClient(url, serviceRoleKey, {
       auth: {

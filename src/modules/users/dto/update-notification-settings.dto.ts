@@ -7,7 +7,7 @@ export class UpdateNotificationSettingsDto {
 
   @IsOptional()
   @IsBoolean()
-  emailOrderAssined?: boolean;
+  emailOrderAssigned?: boolean;
 
   @IsOptional()
   @IsBoolean()

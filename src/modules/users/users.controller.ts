@@ -1,12 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Patch,
-  Post,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Patch, Req, UseGuards } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { SupabaseAuthGuard } from '#/common/guards/supabase-auth.guard';
 import { CurrentUser } from '#/common/decorators/current-user.decorator';
@@ -32,8 +24,8 @@ export class UsersController {
     if (!request.isMultipart()) {
       const dto = request.body as UpdateUserProfileDto;
       return this.usersService.updateUserProfile(
-        userRole.companyId,
         user.id,
+        userRole.companyId,
         dto,
       );
     }
@@ -62,8 +54,8 @@ export class UsersController {
     }
 
     return this.usersService.updateUserProfile(
-      userRole.companyId,
       user.id,
+      userRole.companyId,
       dto as UpdateUserProfileDto,
       avatarFile,
     );
