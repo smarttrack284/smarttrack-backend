@@ -99,6 +99,7 @@ export class OrdersService {
                     orderReference,
                     customerName: dto.customerName,
                     customerPhone: dto.customerPhone,
+                    customerEmail: dto.customerEmail ?? null,
                     pickupLocation: dto.pickupLocation,
                     pickupSavedLocationId: dto.pickupSavedLocationId ?? null,
                     dropoffLocation: dto.dropoffLocation,

@@ -21,6 +21,7 @@ import { ConfigService } from "@nestjs/config";
 import { NotificationSetting } from "#/common/entities/notification-setting.entity";
 import { UpdateNotificationSettingsDto } from "#/modules/users/dto/update-notification-settings.dto";
 import { ErrorHandlerService } from "#/common/errors/error-handler.service";
+import { randomUUID } from "crypto";
 
 @Injectable()
 export class UsersService {
@@ -227,50 +228,47 @@ export class UsersService {
         phone: string | null;
         avatarUrl: string | null;
     }> {
+        let newUploadedAvatarPath: string | undefined;
+
         try {
             let avatarUrl: string | undefined;
-            let avatarExtension: string | undefined;
+            let avatarFilename: string | undefined;
+            let oldAvatarPath: string | undefined;
 
             const supabaseUser = await this.getUserFromSupabase(userId);
 
+            const metadata = supabaseUser.user_metadata as
+                | Record<string, unknown>
+                | undefined;
+
             if (avatarFile) {
-                const metadata = supabaseUser.user_metadata as
-                    | Record<string, unknown>
-                    | undefined;
-
-                const existingAvatarExtension = metadata?.avatar_extension as
+                const existingFilename = metadata?.avatar_filename as
                     | string
                     | undefined;
 
-                const existingAvatarUrl = metadata?.avatar_url as
-                    | string
-                    | undefined;
-
-                if (existingAvatarUrl && existingAvatarExtension) {
-                    await this.storageService.deleteFile(
-                        StoragePath.userAvatar(
-                            companyId,
-                            userId,
-                            `avatar.${existingAvatarExtension}`
-                        )
+                if (existingFilename) {
+                    oldAvatarPath = StoragePath.userAvatar(
+                        companyId,
+                        userId,
+                        existingFilename
                     );
                 }
 
                 const extension = avatarFile.extension.toLowerCase();
 
-                const path = StoragePath.userAvatar(
+                avatarFilename = `avatar-${randomUUID()}.${extension}`;
+
+                newUploadedAvatarPath = StoragePath.userAvatar(
                     companyId,
                     userId,
-                    `avatar.${extension}`
+                    avatarFilename
                 );
 
                 avatarUrl = await this.storageService.uploadFile({
-                    path,
+                    path: newUploadedAvatarPath,
                     buffer: avatarFile.buffer,
                     contentType: avatarFile.contentType
                 });
-
-                avatarExtension = extension;
             }
 
             const metadataUpdate: Record<string, unknown> = {};
@@ -283,12 +281,9 @@ export class UsersService {
                 metadataUpdate.phone = dto.phone;
             }
 
-            if (avatarUrl !== undefined) {
+            if (avatarUrl) {
                 metadataUpdate.avatar_url = avatarUrl;
-            }
-
-            if (avatarExtension !== undefined) {
-                metadataUpdate.avatar_extension = avatarExtension;
+                metadataUpdate.avatar_filename = avatarFilename;
             }
 
             let updatedUser = supabaseUser;
@@ -300,13 +295,7 @@ export class UsersService {
                     });
 
                 if (error || !data?.user) {
-                    this.logger.error(
-                        `Failed to update profile for user ${userId}.`,
-                        error
-                    );
-
                     throw new ExternalServiceException(
-                        "Profile",
                         "We couldn't update your profile at the moment. Please try again."
                     );
                 }
@@ -318,19 +307,41 @@ export class UsersService {
                 await this.userRoleRepo.update({ userId }, { name: dto.name });
             }
 
-            const metadata = updatedUser.user_metadata as Record<
+            if (oldAvatarPath) {
+                await this.storageService
+                    .deleteFile(oldAvatarPath)
+                    .catch(err => {
+                        this.logger.error(
+                            `Failed deleting old avatar: ${oldAvatarPath}`,
+                            err
+                        );
+                    });
+            }
+
+            const updatedMetadata = updatedUser.user_metadata as Record<
                 string,
                 unknown
-            > | null;
+            >;
 
             return {
                 id: updatedUser.id,
-                name: (metadata?.full_name as string | undefined) ?? null,
-                phone: (metadata?.phone as string | undefined) ?? null,
-                avatarUrl: (metadata?.avatar_url as string | undefined) ?? null
+                name: (updatedMetadata.full_name as string) ?? null,
+                phone: (updatedMetadata.phone as string) ?? null,
+                avatarUrl: (updatedMetadata.avatar_url as string) ?? null
             };
         } catch (err) {
-            this.errorHandler.handle(err, "UsersService.updatedUser");
+            if (newUploadedAvatarPath) {
+                await this.storageService
+                    .deleteFile(newUploadedAvatarPath)
+                    .catch(cleanupErr =>
+                        this.logger.error(
+                            `Failed cleaning uploaded avatar: ${newUploadedAvatarPath}`,
+                            cleanupErr
+                        )
+                    );
+            }
+
+            this.errorHandler.handle(err, "UsersService.updateUserProfile");
         }
     }
 

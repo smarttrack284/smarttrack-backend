@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>We Couldn't Complete Your Delivery</title>
+</head>
+
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;color:#18181b;">
+
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f4f5;padding:40px 20px;">
+<tr>
+<td align="center">
+
+<table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background:#ffffff;border-radius:10px;overflow:hidden;">
+
+<tr>
+<td style="background:#16a34a;padding:24px;text-align:center;">
+<h1 style="margin:0;color:#ffffff;font-size:24px;">
+{{companyName}}
+</h1>
+</td>
+</tr>
+
+<tr>
+<td style="padding:40px;">
+
+<p style="margin-top:0;font-size:16px;">
+Hello <strong>{{customerName}}</strong>,
+</p>
+
+<p style="font-size:15px;line-height:1.7;">
+Unfortunately, we were unable to complete the delivery of your order.
+</p>
+
+<p style="font-size:15px;line-height:1.7;">
+This doesn't necessarily mean your order has been cancelled. Our team may need additional information or may be arranging the next steps to resolve the issue.
+</p>
+
+<table width="100%" cellspacing="0" cellpadding="0" style="margin:30px 0;background:#f9fafb;border:1px solid #e4e4e7;border-radius:8px;">
+<tr>
+<td style="padding:20px;">
+
+<p style="margin:0 0 10px;">
+<strong>Order Reference</strong>
+</p>
+
+<p style="margin:0;font-size:18px;font-weight:bold;color:#16a34a;">
+{{orderReference}}
+</p>
+
+<p style="margin:20px 0 10px;">
+<strong>Current Status</strong>
+</p>
+
+<p style="margin:0;font-size:16px;font-weight:600;color:#dc2626;">
+{{statusLabel}}
+</p>
+
+</td>
+</tr>
+</table>
+
+<div style="text-align:center;margin:35px 0;">
+
+<a
+href="{{trackingUrl}}"
+style="background:#16a34a;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:bold;display:inline-block;">
+View Order Status
+</a>
+
+</div>
+
+<p style="font-size:15px;line-height:1.7;">
+If you have any questions or would like assistance, please contact our support team. We'll be happy to help and discuss the available options.
+</p>
+
+<p style="font-size:15px;line-height:1.7;">
+Email us at
+<a href="mailto:{{supportEmail}}" style="color:#16a34a;text-decoration:none;">
+{{supportEmail}}
+</a>.
+</p>
+
+<p style="margin-top:40px;">
+We sincerely apologize for the inconvenience and appreciate your patience.
+</p>
+
+<p style="margin-top:24px;">
+Kind regards,<br>
+<strong>The {{companyName}} Team</strong>
+</p>
+
+</td>
+</tr>
+
+<tr>
+<td style="background:#f

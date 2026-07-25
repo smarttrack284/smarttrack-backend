@@ -30,6 +30,11 @@
                 >
                   {{companyName}}
                 </h2>
+                <p
+                  style="margin:6px 0 0;font-size:14px;color:#71717a;"
+                >
+                  Order status notification
+                </p>
               </td>
             </tr>
 
@@ -39,23 +44,22 @@
                 <p
                   style="margin:0 0 16px;font-size:16px;line-height:1.6;"
                 >
-                  Hi {{customerName}},
+                  Hi {{memberName}},
                 </p>
 
                 <p
-                  style="margin:0 0 16px;font-size:16px;line-height:1.6;"
+                  style="margin:0 0 20px;font-size:16px;line-height:1.6;"
                 >
-                  We wanted to let you know that there has been an update to
-                  your order.
+                  An order status has been updated in your workspace.
                 </p>
 
                 <div
-                  style="margin:24px 0;padding:16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;"
+                  style="padding:16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;"
                 >
                   <p
                     style="margin:0;font-size:14px;color:#71717a;"
                   >
-                    Order Number
+                    Order
                   </p>
 
                   <p
@@ -67,21 +71,35 @@
                   <p
                     style="margin:0;font-size:14px;color:#71717a;"
                   >
-                    Current Status
+                    Customer
                   </p>
 
                   <p
-                    style="margin:6px 0 0;font-size:18px;font-weight:600;color:#16a34a;"
+                    style="margin:6px 0 16px;font-size:15px;"
                   >
-                    {{statusLabel}}
+                    {{customerName}}
+                  </p>
+
+                  <p
+                    style="margin:0;font-size:14px;color:#71717a;"
+                  >
+                    Status Change
+                  </p>
+
+                  <p
+                    style="margin:6px 0 0;font-size:15px;font-weight:600;"
+                  >
+                    {{previousStatus}} → 
+                    <span style="color:#16a34a;">
+                      {{statusLabel}}
+                    </span>
                   </p>
                 </div>
 
                 <p
-                  style="margin:0 0 24px;font-size:16px;line-height:1.6;"
+                  style="margin:24px 0;font-size:15px;line-height:1.6;color:#52525b;"
                 >
-                  You can view your order details and track its progress using
-                  the button below.
+                  Updated by: <strong>{{updatedBy}}</strong>
                 </p>
 
                 <table role="presentation" cellspacing="0" cellpadding="0">
@@ -90,28 +108,21 @@
                       style="background:#16a34a;border-radius:8px;"
                     >
                       <a
-                        href="{{trackingUrl}}"
+                        href="{{orderUrl}}"
                         style="display:inline-block;padding:12px 24px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;"
                       >
-                        Track my order
+                        View Order
                       </a>
                     </td>
                   </tr>
                 </table>
 
                 <p
-                  style="margin:32px 0 0;font-size:16px;line-height:1.6;"
+                  style="margin:32px 0 0;font-size:14px;line-height:1.6;color:#71717a;"
                 >
-                  Thank you for choosing {{companyName}}. We appreciate your
-                  business and will continue working to provide you with the
-                  best service.
-                </p>
-
-                <p
-                  style="margin:24px 0 0;font-size:16px;line-height:1.6;"
-                >
-                  Best regards,<br />
-                  <strong>{{companyName}} Team</strong>
+                  This notification was sent to keep your team updated on
+                  order activity. No action is required unless this change
+                  requires follow-up.
                 </p>
               </td>
             </tr>
@@ -121,14 +132,7 @@
               <td
                 style="padding:20px 32px;background:#fafafa;border-top:1px solid #e4e4e7;text-align:center;font-size:12px;color:#71717a;"
               >
-                Need help with your order?
-                Contact us at
-                <a
-                  href="mailto:{{supportEmail}}"
-                  style="color:#16a34a;text-decoration:none;"
-                >
-                  {{supportEmail}}
-                </a>
+                {{companyName}} · Internal order notification
               </td>
             </tr>
 

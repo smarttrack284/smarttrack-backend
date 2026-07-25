@@ -1,32 +1,93 @@
 export enum SubscriptionPlan {
-  FREE = 'free',
-  STARTER = 'starter',
-  PRO = 'pro',
+    FREE = "free",
+    STARTER = "starter",
+    PRO = "pro"
 }
 
-export enum SubscriptionStatus {
-  ACTIVE = 'active',
-  CANCELED = 'canceled',
-  PAST_DUE = 'past_due',
+export interface PlanFeatures {
+    maxOrders: number | null;
+    maxTeams: number | null;
+
+    basicOverviewDashboard: boolean;
+    advancedOverviewDashboard: boolean;
+    analyticsDashboard: boolean;
+
+    customerEmailNotifications: boolean;
+    customerSMSNotifications: boolean;
+
+    apiIntegrationAccess: boolean;
+    importOrders: boolean;
+    webhooks: boolean;
 }
 
-export type PlanLimits = {
-  /** null = unlimited */
-  orderLimit: number | null;
-  /** null = unlimited */
-  teamMemberLimit: number | null;
+export const SUBSCRIPTION_PLAN_FEATURES: Record<
+    SubscriptionPlan,
+    PlanFeatures
+> = {
+    [SubscriptionPlan.FREE]: {
+        maxOrders: 50,
+        maxTeams: 2,
+
+        basicOverviewDashboard: true,
+        advancedOverviewDashboard: false,
+        analyticsDashboard: false,
+
+        customerEmailNotifications: true,
+        customerSMSNotifications: false,
+
+        apiIntegrationAccess: false,
+        importOrders: false,
+        webhooks: false
+    },
+
+    [SubscriptionPlan.STARTER]: {
+        maxOrders: 500,
+        maxTeams: 10,
+
+        basicOverviewDashboard: true,
+        advancedOverviewDashboard: true,
+        analyticsDashboard: true,
+
+        customerEmailNotifications: true,
+        customerSMSNotifications: true,
+
+        apiIntegrationAccess: true,
+        importOrders: true,
+        webhooks: false
+    },
+
+    [SubscriptionPlan.PRO]: {
+        maxOrders: null,
+        maxTeams: null,
+
+        basicOverviewDashboard: true,
+        advancedOverviewDashboard: true,
+        analyticsDashboard: true,
+
+        customerEmailNotifications: true,
+        customerSMSNotifications: true,
+
+        apiIntegrationAccess: true,
+        importOrders: true,
+        webhooks: true
+    }
 };
 
 /**
- * MVP-level plan definitions — mirrors the same three-tier shape as the
- * frontend's earlier billing mock (plans array in use-billing-overview.ts), just
- * renamed to match the actual product tiers (free/starter/pro) rather than
- * the placeholder (starter/growth/scale) used there. Numbers here are a
- * reasonable MVP starting point, not confirmed pricing — revisit once
- * real usage data exists.
+ * Returns all features available for a subscription plan.
  */
-export const SUBSCRIPTION_PLAN_LIMITS: Record<SubscriptionPlan, PlanLimits> = {
-  [SubscriptionPlan.FREE]: { orderLimit: 50, teamMemberLimit: 2 },
-  [SubscriptionPlan.STARTER]: { orderLimit: 500, teamMemberLimit: 10 },
-  [SubscriptionPlan.PRO]: { orderLimit: null, teamMemberLimit: null },
-};
+export function getPlanFeatures(
+    plan: SubscriptionPlan
+): PlanFeatures {
+    return SUBSCRIPTION_PLAN_FEATURES[plan];
+}
+
+/**
+ * Convenience helper for checking a single feature.
+ */
+export function hasPlanFeature<K extends keyof PlanFeatures>(
+    plan: SubscriptionPlan,
+    feature: K
+): PlanFeatures[K] {
+    return SUBSCRIPTION_PLAN_FEATURES[plan][feature];
+}

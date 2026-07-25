@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Order Received</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;color:#18181b;">
+
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f4f5;padding:40px 20px;">
+<tr>
+<td align="center">
+
+<table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background:#ffffff;border-radius:10px;overflow:hidden;">
+
+<tr>
+<td style="background:#16a34a;padding:24px;text-align:center;">
+<h1 style="margin:0;color:#ffffff;font-size:24px;">
+{{companyName}}
+</h1>
+</td>
+</tr>
+
+<tr>
+<td style="padding:40px;">
+
+<p style="margin-top:0;font-size:16px;">
+Hello <strong>{{customerName}}</strong>,
+</p>
+
+<p style="line-height:1.7;font-size:15px;">
+Thank you for choosing <strong>{{companyName}}</strong>.
+We've successfully received your order and it's now being processed by our team.
+</p>
+
+<table width="100%" cellspacing="0" cellpadding="0" style="margin:30px 0;background:#f9fafb;border:1px solid #e4e4e7;border-radius:8px;">
+<tr>
+<td style="padding:20px;">
+
+<p style="margin:0 0 10px;">
+<strong>Order Reference</strong>
+</p>
+
+<p style="margin:0;font-size:18px;font-weight:bold;color:#16a34a;">
+{{orderReference}}
+</p>
+
+<p style="margin:20px 0 10px;">
+<strong>Current Status</strong>
+</p>
+
+<p style="margin:0;font-size:16px;">
+{{statusLabel}}
+</p>
+
+</td>
+</tr>
+</table>
+
+<div style="text-align:center;margin:35px 0;">
+
+<a
+href="{{trackingUrl}}"
+style="background:#16a34a;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:bold;display:inline-block;">
+Track Your Order
+</a>
+
+</div>
+
+<p style="line-height:1.7;font-size:15px;">
+We'll keep you updated as your order progresses.
+</p>
+
+<p style="line-height:1.7;font-size:15px;">
+If you have any questions, simply contact us at
+<a href="mailto:{{supportEmail}}" style="color:#16a34a;">
+{{supportEmail}}
+</a>.
+</p>
+
+<p style="margin-top:40px;">
+Kind regards,<br>
+<strong>{{companyName}}</strong>
+</p>
+
+</td>
+</tr>
+
+<tr>
+<td style="background:#f9fafb;padding:20px;text-align:center;font-size:12px;color:#71717a;">
+This email was sent regarding your recent order with {{companyName}}.
+</td>
+</tr>
+
+</table>
+
+</td>
+</tr>
+</table>
+
+</body>
+</html>

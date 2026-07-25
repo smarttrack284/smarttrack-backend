@@ -23,6 +23,7 @@ import { MailModule } from "#/modules/mail/mail.module";
 import { BullModule } from "@nestjs/bullmq";
 import { ErrorHandlerModule } from "#/common/errors/error-handler.module";
 import { ApiKeyAuthModule } from "#/common/api-key-auth/api-key-auth.module";
+import { NotificationsModule } from "#/modules/notifications/notifications.module";
 
 @Module({
     imports: [
@@ -40,6 +41,7 @@ import { ApiKeyAuthModule } from "#/common/api-key-auth/api-key-auth.module";
             })
         }),
         ApiKeyAuthModule,
+        NotificationsModule,
         ErrorHandlerModule,
         EventEmitterModule.forRoot(),
         StorageModule,

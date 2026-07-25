@@ -49,6 +49,9 @@ export class Order {
 
   @Column({ name: 'customer_phone', type: 'varchar', length: 32 })
   customerPhone: string;
+  
+  @Column({ name: 'customer_email', type: 'varchar', length: 100, nullable:true })
+  customerEmail: string | null;
 
   @Column(() => OrderLocationEmbed, { prefix: 'pickup' })
   pickupLocation: OrderLocationEmbed;

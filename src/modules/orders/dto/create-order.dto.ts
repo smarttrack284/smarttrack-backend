@@ -1,57 +1,63 @@
-import { Type } from 'class-transformer';
+import { Type } from "class-transformer";
 import {
-  ArrayMinSize,
-  IsArray,
-  IsDateString,
-  IsEnum,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-  MinLength,
-  ValidateNested,
-} from 'class-validator';
-import { OrderPriority } from '#/common/constants/order-status.constant';
-import { OrderLocationDto } from './order-location.dto';
-import { OrderItemDto } from './order-item.dto';
+    ArrayMinSize,
+    IsArray,
+    IsDateString,
+    IsEnum,
+    IsEmail,
+    IsOptional,
+    IsString,
+    IsUUID,
+    MaxLength,
+    MinLength,
+    ValidateNested
+} from "class-validator";
+import { OrderPriority } from "#/common/constants/order-status.constant";
+import { OrderLocationDto } from "./order-location.dto";
+import { OrderItemDto } from "./order-item.dto";
 
 export class CreateOrderDto {
-  @IsString()
-  @MinLength(2)
-  @MaxLength(255)
-  customerName: string;
+    @IsString()
+    @MinLength(2)
+    @MaxLength(255)
+    customerName: string;
 
-  @IsString()
-  @MaxLength(32)
-  customerPhone: string;
+    @IsString()
+    @MaxLength(32)
+    customerPhone: string;
 
-  @ValidateNested()
-  @Type(() => OrderLocationDto)
-  pickupLocation: OrderLocationDto;
+    @IsOptional()
+    @IsEmail()
+    @MaxLength(100)
+    customerEmail?: string;
 
-  @IsOptional()
-  @IsUUID()
-  pickupSavedLocationId?: string;
+    @ValidateNested()
+    @Type(() => OrderLocationDto)
+    pickupLocation: OrderLocationDto;
 
-  @ValidateNested()
-  @Type(() => OrderLocationDto)
-  dropoffLocation: OrderLocationDto;
+    @IsOptional()
+    @IsUUID()
+    pickupSavedLocationId?: string;
 
-  @IsArray()
-  @ArrayMinSize(1)
-  @ValidateNested({ each: true })
-  @Type(() => OrderItemDto)
-  items: OrderItemDto[];
+    @ValidateNested()
+    @Type(() => OrderLocationDto)
+    dropoffLocation: OrderLocationDto;
 
-  @IsOptional()
-  @IsEnum(OrderPriority)
-  priority?: OrderPriority;
+    @IsArray()
+    @ArrayMinSize(1)
+    @ValidateNested({ each: true })
+    @Type(() => OrderItemDto)
+    items: OrderItemDto[];
 
-  @IsOptional()
-  @IsDateString()
-  scheduledFor?: string;
+    @IsOptional()
+    @IsEnum(OrderPriority)
+    priority?: OrderPriority;
 
-  @IsOptional()
-  @IsString()
-  notes?: string;
+    @IsOptional()
+    @IsDateString()
+    scheduledFor?: string;
+
+    @IsOptional()
+    @IsString()
+    notes?: string;
 }
