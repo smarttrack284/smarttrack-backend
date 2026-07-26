@@ -4,9 +4,14 @@ export enum SubscriptionPlan {
     PRO = "pro"
 }
 
+export enum SubscriptionStatus {
+  ACTIVE = "active",
+
+}
+
 export interface PlanFeatures {
-    maxOrders: number | null;
-    maxTeams: number | null;
+    orderLimit: number | null;
+    teamMemberLimit: number | null;
 
     basicOverviewDashboard: boolean;
     advancedOverviewDashboard: boolean;
@@ -25,8 +30,8 @@ export const SUBSCRIPTION_PLAN_FEATURES: Record<
     PlanFeatures
 > = {
     [SubscriptionPlan.FREE]: {
-        maxOrders: 50,
-        maxTeams: 2,
+        orderLimit: 50,
+        teamMemberLimit: 2,
 
         basicOverviewDashboard: true,
         advancedOverviewDashboard: false,
@@ -41,8 +46,8 @@ export const SUBSCRIPTION_PLAN_FEATURES: Record<
     },
 
     [SubscriptionPlan.STARTER]: {
-        maxOrders: 500,
-        maxTeams: 10,
+        orderLimit: 500,
+        teamMemberLimit: 10,
 
         basicOverviewDashboard: true,
         advancedOverviewDashboard: true,
@@ -57,8 +62,8 @@ export const SUBSCRIPTION_PLAN_FEATURES: Record<
     },
 
     [SubscriptionPlan.PRO]: {
-        maxOrders: null,
-        maxTeams: null,
+        orderLimit: null,
+        teamMemberLimit: null,
 
         basicOverviewDashboard: true,
         advancedOverviewDashboard: true,

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Team Member Joined</title>
+</head>
+
+<body
+        style="
+    margin:0;
+    padding:32px;
+    background:#f4f4f5;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    color:#18181b;
+  "
+>
+<table
+        role="presentation"
+        cellpadding="0"
+        cellspacing="0"
+        width="100%"
+>
+    <tr>
+        <td align="center">
+
+            <table
+                    role="presentation"
+                    cellpadding="0"
+                    cellspacing="0"
+                    width="600"
+                    style="
+    background:#ffffff;
+    border-radius:12px;
+    overflow:hidden;
+    border:1px solid #e4e4e7;
+  "
+            >
+
+                <tr>
+                    <td
+                            style="
+    background:#16a34a;
+    color:#ffffff;
+    padding:28px;
+    text-align:center;
+  "
+                    >
+                        <h1
+                                style="
+    margin:0;
+    font-size:24px;
+    font-weight:700;
+  "
+                        >
+                            Team Member Joined
+                        </h1>
+
+                        <p
+                                style="
+    margin:10px 0 0;
+    font-size:15px;
+    opacity:.95;
+  "
+                        >
+                            A new member has successfully joined your workspace.
+                        </p>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td style="padding:32px;">
+
+                        <p style="margin:0 0 18px;">
+                            Hello,
+                        </p>
+
+                        <p style="margin:0 0 20px; line-height:1.7;">
+                            <strong>{{memberName}}</strong> has accepted your invitation and is now a member of
+                            <strong>{{companyName}}</strong>.
+                        </p>
+
+                        <table
+                                role="presentation"
+                                cellpadding="0"
+                                cellspacing="0"
+                                width="100%"
+                                style="
+    background:#f9fafb;
+    border:1px solid #e5e7eb;
+    border-radius:8px;
+    margin:24px 0;
+  "
+                        >
+
+                            <tr>
+                                <td style="padding:18px;">
+
+                                    <p style="margin:0 0 12px;">
+                                        <strong>Member Details</strong>
+                                    </p>
+
+                                    <p style="margin:6px 0;">
+                                        <strong>Name:</strong> {{memberName}}
+                                    </p>
+
+                                    <p style="margin:6px 0;">
+                                        <strong>Email:</strong> {{memberEmail}}
+                                    </p>
+
+                                    <p style="margin:6px 0;">
+                                        <strong>Role:</strong> {{roleLabel}}
+                                    </p>
+
+                                    <p style="margin:6px 0;">
+                                        <strong>Joined:</strong> {{joinedAt}}
+                                    </p>
+
+                                </td>
+                            </tr>
+
+                        </table>
+
+                        <table
+                                role="presentation"
+                                cellpadding="0"
+                                cellspacing="0"
+                        >
+                            <tr>
+                                <td
+                                        style="
+    background:#16a34a;
+    border-radius:8px;
+  "
+                                >
+
+                                    <a
+                                            href="{{teamUrl}}"
+                                            style="
+    display:inline-block;
+    padding:14px 24px;
+    color:#ffffff;
+    text-decoration:none;
+    font-weight:600;
+    font-size:14px;
+  "
+                                    >
+                                        View Team Members
+                                    </a>
+
+                                </td>
+                            </tr>
+                        </table>
+
+                        <p
+                                style="
+    margin:28px 0 0;
+    color:#52525b;
+    line-height:1.7;
+  "
+                        >
+                            The new team member can now access your SmartTrack workspace according to the permissions assigned to their role.
+                        </p>
+
+                    </td>
+                </tr>
+
+                <tr>
+                    <td
+                            style="
+    border-top:1px solid #e4e4e7;
+    padding:24px;
+    font-size:13px;
+    color:#71717a;
+    text-align:center;
+    line-height:1.6;
+  "
+                    >
+                        This notification was sent because your workspace is configured to receive team activity emails.
+
+                        <br><br>
+
+                        © {{year}} SmartTrack
+                    </td>
+                </tr>
+
+            </table>
+
+        </td>
+    </tr>
+</table>
+</body>
+</html>

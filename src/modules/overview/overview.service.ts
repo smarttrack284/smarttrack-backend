@@ -73,17 +73,17 @@ export class OverviewService {
    */
   @OnEvent(ORDER_EVENTS.CREATED)
   async handleOrderCreated(event: OrderCreatedEvent) {
-    await this.refreshAndBroadcast(event.companyId);
+    await this.refreshAndBroadcast(event.payload.companyId);
   }
 
   @OnEvent(ORDER_EVENTS.STATUS_CHANGED)
   async handleOrderStatusChanged(event: OrderStatusChangedEvent) {
-    await this.refreshAndBroadcast(event.companyId);
+    await this.refreshAndBroadcast(event.payload.companyId);
   }
 
   @OnEvent(ORDER_EVENTS.DELETED)
   async handleOrderDeleted(event: OrderDeletedEvent) {
-    await this.refreshAndBroadcast(event.companyId);
+    await this.refreshAndBroadcast(event.payload.companyId);
   }
 
   private async computeKpis(companyId: string) {

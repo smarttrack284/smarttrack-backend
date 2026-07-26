@@ -9,12 +9,14 @@ import { CompaniesService } from './companies.service';
 import { CompaniesController } from './companies.controller';
 import { SavedLocation } from '#/common/entities/saved-location.entity';
 import { ApiKey } from '#/common/entities/api-key.entity';
+import { CompanyNotificationSetting } from '#/common/entities/company-notification-settings.entity';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       Company,
       NotificationSetting,
+      CompanyNotificationSetting,
       SavedLocation,
       ApiKey,
     ]),

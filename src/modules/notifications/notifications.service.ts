@@ -1,117 +1,132 @@
-import { Injectable } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { OnEvent } from "@nestjs/event-emitter";
-import { Repository } from "typeorm";
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { OnEvent } from '@nestjs/event-emitter';
+import { Repository } from 'typeorm';
 
-import { CompanyNotificationSetting } from "#/common/entities/company-notification-setting.entity";
+import { CompanyNotificationSetting } from '#/common/entities/company-notification-settings.entity';
 
 import {
-    ORDER_EVENTS,
-    OrderCreatedEvent,
-    OrderStatusChangedEvent
-} from "#/common/events/order.events";
+  ORDER_EVENTS,
+  OrderCreatedEvent,
+  OrderStatusChangedEvent,
+} from '#/common/events/order.events';
 
-import { CustomerNotificationsService } from "./customer-notifications.service";
-import { TeamNotificationsService } from "./team-notifications.service";
+import { CustomerNotificationsService } from './customer-notifications.service';
+import { TeamNotificationsService } from './team-notifications.service';
+import {
+  TEAM_EVENTS,
+  TeamMemberAcceptedEvent,
+} from '#/common/events/team.events';
 
 @Injectable()
 export class NotificationsService {
-    constructor(
-        private readonly customerNotificationsService: CustomerNotificationsService,
+  constructor(
+    private readonly customerNotificationsService: CustomerNotificationsService,
 
-        private readonly teamNotificationsService: TeamNotificationsService,
+    private readonly teamNotificationsService: TeamNotificationsService,
 
-        @InjectRepository(CompanyNotificationSetting)
-        private readonly companyNotificationRepo: Repository<CompanyNotificationSetting>
-    ) {}
+    @InjectRepository(CompanyNotificationSetting)
+    private readonly companyNotificationRepo: Repository<CompanyNotificationSetting>,
+  ) {}
 
-    /**
-     * New order created
-     */
-    @OnEvent(ORDER_EVENTS.CREATED)
-    async handleOrderCreated(event: OrderCreatedEvent): Promise<void> {
-        const companySettings = await this.getCompanyNotificationSettings(
-            event.companyId
-        );
+  /**
+   * New order created
+   */
+  @OnEvent(ORDER_EVENTS.CREATED)
+  async handleOrderCreated(event: OrderCreatedEvent): Promise<void> {
+    const companySettings = await this.getCompanyNotificationSettings(
+      event.payload.companyId,
+    );
 
-        if (!companySettings) {
-            return;
-        }
-
-        await Promise.all([
-            this.customerNotificationsService.handleOrderCreated(
-                event,
-                companySettings
-            ),
-
-            this.teamNotificationsService.handleOrderCreated(event)
-        ]);
+    if (!companySettings) {
+      return;
     }
 
-    /**
-     * Order status changed
-     */
-    @OnEvent(ORDER_EVENTS.STATUS_CHANGED)
-    async handleOrderStatusChanged(
-        event: OrderStatusChangedEvent
-    ): Promise<void> {
-        const companySettings = await this.getCompanyNotificationSettings(
-            event.companyId
-        );
+    await Promise.all([
+      this.customerNotificationsService.handleOrderCreated(
+        event,
+        companySettings,
+      ),
 
-        if (!companySettings) {
-            return;
-        }
+      this.teamNotificationsService.handleOrderCreated(event),
+    ]);
+  }
 
-        await Promise.all([
-            this.customerNotificationsService.handleOrderStatusChanged(
-                event,
-                companySettings
-            ),
+  /**
+   * Order status changed
+   */
+  @OnEvent(ORDER_EVENTS.STATUS_CHANGED)
+  async handleOrderStatusChanged(
+    event: OrderStatusChangedEvent,
+  ): Promise<void> {
+    const companySettings = await this.getCompanyNotificationSettings(
+      event.payload.companyId,
+    );
 
-            this.teamNotificationsService.handleOrderStatusChanged(event)
-        ]);
+    if (!companySettings) {
+      return;
     }
 
-    /**
-     * Future events
-     *
-     * These can be enabled when you introduce
-     * separate event names instead of only STATUS_CHANGED.
-     */
+    await Promise.all([
+      this.customerNotificationsService.handleOrderStatusChanged(
+        event,
+        companySettings,
+      ),
 
-    @OnEvent(ORDER_EVENTS.ASSIGNED)
-    async handleOrderAssigned(event: OrderStatusChangedEvent): Promise<void> {
-        await this.handleOrderStatusChanged(event);
-    }
+      this.teamNotificationsService.handleOrderStatusChanged(event),
+    ]);
+  }
 
-    @OnEvent(ORDER_EVENTS.PICKED_UP)
-    async handleOrderPickedUp(event: OrderStatusChangedEvent): Promise<void> {
-        await this.handleOrderStatusChanged(event);
-    }
+  /**
+   * Future events
+   *
+   * These can be enabled when you introduce
+   * separate event names instead of only STATUS_CHANGED.
+   */
 
-    @OnEvent(ORDER_EVENTS.DELIVERED)
-    async handleOrderDelivered(event: OrderStatusChangedEvent): Promise<void> {
-        await this.handleOrderStatusChanged(event);
-    }
+  @OnEvent(ORDER_EVENTS.ASSIGNED)
+  async handleOrderAssigned(event: OrderStatusChangedEvent): Promise<void> {
+    await this.handleOrderStatusChanged(event);
+  }
 
-    @OnEvent(ORDER_EVENTS.FAILED)
-    async handleOrderFailed(event: OrderStatusChangedEvent): Promise<void> {
-        await this.handleOrderStatusChanged(event);
-    }
+  @OnEvent(ORDER_EVENTS.PICKED_UP)
+  async handleOrderPickedUp(event: OrderStatusChangedEvent): Promise<void> {
+    await this.handleOrderStatusChanged(event);
+  }
 
-    @OnEvent(ORDER_EVENTS.CANCELLED)
-    async handleOrderCancelled(event: OrderStatusChangedEvent): Promise<void> {
-        await this.handleOrderStatusChanged(event);
-    }
+  @OnEvent(ORDER_EVENTS.DELIVERED)
+  async handleOrderDelivered(event: OrderStatusChangedEvent): Promise<void> {
+    await this.handleOrderStatusChanged(event);
+  }
 
-    private async getCompanyNotificationSettings(
-        companyId: string
-    ): Promise<CompanyNotificationSetting | null> {
-        return this.companyNotificationRepo.findOne({
-            where: {
-                companyId
-            }
-        });
-    }
+  @OnEvent(ORDER_EVENTS.FAILED)
+  async handleOrderFailed(event: OrderStatusChangedEvent): Promise<void> {
+    await this.handleOrderStatusChanged(event);
+  }
+
+  @OnEvent(ORDER_EVENTS.CANCELLED)
+  async handleOrderCancelled(event: OrderStatusChangedEvent): Promise<void> {
+    await this.handleOrderStatusChanged(event);
+  }
+
+  /*
+   * Team events
+   * */
+
+  @OnEvent(TEAM_EVENTS.MEMBER_ACCEPTED)
+  async handleTeamMemberAccepted(
+    event: TeamMemberAcceptedEvent,
+  ): Promise<void> {
+    await this.teamNotificationsService.handleTeamMemberAccepted(event);
+  }
+
+  private async getCompanyNotificationSettings(
+    companyId: string,
+  ): Promise<CompanyNotificationSetting | null> {
+    return this.companyNotificationRepo.findOne({
+      where: {
+        companyId,
+      },
+    });
+  }
 }

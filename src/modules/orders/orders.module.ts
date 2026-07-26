@@ -11,6 +11,7 @@ import { OrdersSubscriptionRegistry } from './orders-subscription-registry.servi
 import { OrdersGateway } from '#/modules/orders/orders.gateway';
 import { UserRole } from '#/common/entities/user-role.entity';
 import { TeamModule } from '#/modules/team/team.module';
+import { CompaniesModule } from '#/modules/companies/companies.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { TeamModule } from '#/modules/team/team.module';
     UsageModule,
     UsersModule,
     TeamModule,
+    CompaniesModule
   ],
   controllers: [OrdersController],
   providers: [

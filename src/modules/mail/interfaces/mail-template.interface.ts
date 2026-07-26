@@ -3,6 +3,7 @@ export enum MailTemplate {
      * Team
      */
     TEAM_INVITE = "team-invite",
+    TEAM_MEMBER_ACCEPTED = "team-memember-accepted",
 
     /**
      * Customer order notifications
@@ -55,14 +56,24 @@ export type CustomerOrderContext = {
  * Shared across all internal order lifecycle templates.
  */
 export type TeamOrderContext = {
-    companyName: string;
-    customerName: string;
-    memberName: string;
-    orderReference: string;
-    statusLabel: string;
-    previousStatus?: string;
-    updatedBy: string;
-    orderUrl: string;
+  companyName: string;
+  customerName: string;
+  memberName: string;
+  orderReference: string;
+  statusLabel: string;
+  previousStatus?: string;
+  updatedBy: string;
+  orderUrl: string;
+};
+
+export type TeamMemberAcceptedContext = {
+  companyName: string;
+  memberName: string;
+  memberEmail: string;
+  roleLabel: string;
+  joinedAt: string;
+  teamUrl: string;
+  year: number;
 };
 
 /**
@@ -82,6 +93,7 @@ export type MailTemplateContextMap = {
      * Team
      */
     [MailTemplate.TEAM_INVITE]: TeamInviteContext;
+    [MailTemplate.TEAM_MEMBER_ACCEPTED]: TeamMemberAcceptedContext;
 
     /**
      * Customer
