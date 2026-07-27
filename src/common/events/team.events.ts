@@ -22,10 +22,41 @@ export interface TeamMemberAcceptedEventPayload {
 
   recipients: TeamNotificationRecipient[];
 }
+
+export interface TeamInviteMemberEventPayload {
+  companyId: string
+  inviteEmail: string;
+  companyName: string;
+  inviterName: string;
+  roleLabel: string;
+  acceptUrl: string;
+}
+
 export const TEAM_EVENTS = {
-  MEMBER_ACCEPTED: 'team.member.accepted',
+  MEMBER_ACCEPTED: 'team.member-accepted',
+  INVITE_MEMBER: 'team.invite-member',
+  ROLE_CHANGED: 'team.role_changed',
+  REMOVED: 'team.removed',
 } as const;
 
 export class TeamMemberAcceptedEvent {
   constructor(public readonly payload: TeamMemberAcceptedEventPayload) {}
+}
+
+export class TeamInviteMemberEvent {
+  constructor(public readonly payload: TeamInviteMemberEventPayload) {}
+}
+
+export class TeamMemberRoleChangedEvent {
+  constructor(
+    public readonly companyId: string,
+    public readonly memberName: string,
+    public readonly newRole: string,
+  ) {}
+}
+export class TeamMemberRemovedEvent {
+  constructor(
+    public readonly companyId: string,
+    public readonly memberName: string,
+  ) {}
 }

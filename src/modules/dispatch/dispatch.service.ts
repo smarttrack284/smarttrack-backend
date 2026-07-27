@@ -2,30 +2,20 @@ import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Brackets, DataSource, EntityManager, In, Repository } from 'typeorm';
 import { Trip } from '#/common/entities/trip.entity';
-import {
-  ProofOfDeliveryMethod,
-  TripStop,
-} from '#/common/entities/trip-stop.entity';
+import { ProofOfDeliveryMethod, TripStop, } from '#/common/entities/trip-stop.entity';
 import { StopStatus } from '#/common/constants/stop-status.constant';
 import { OrderStatus } from '#/common/constants/order-status.constant';
 import { TripStatus } from '#/common/constants/trip-status.constant';
 import { TeamRoleType } from '#/common/types/team-role.type';
-import {
-  deriveTripStatus,
-  getTripProgress,
-} from '#/common/utils/trip-status.util';
-import {
-  BadRequestAppException,
-  ForbiddenAppException,
-  ResourceNotFoundException,
-} from '#/common/exceptions';
+import { deriveTripStatus, getTripProgress, } from '#/common/utils/trip-status.util';
+import { BadRequestAppException, ForbiddenAppException, ResourceNotFoundException, } from '#/common/exceptions';
 import { OrdersService } from '#/modules/orders/orders.service';
 import { UsersService } from '#/modules/users/users.service';
 import { TrackingService } from '#/modules/tracking/tracking.service';
 import { DispatchOrdersDto } from './dto/dispatch-orders.dto';
 import { SkipStopDto } from './dto/skip-stop.dto';
 import { ListTripsQueryDto } from './dto/list-trips.query.dto';
-import { OnEvent } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { RedisCacheService } from '#/common/cache/redis-cache.service';
 import { TRIP_EVENTS, TripUpdatedEvent } from '#/common/events/trip.events';
 import { StorageService } from '#/common/storage/storage.service';
@@ -34,6 +24,7 @@ import { CompleteStopDto } from './dto/complete-stop.dto';
 import { UserRole } from '#/common/entities/user-role.entity';
 import { deriveTripActivity } from '#/common/utils/trip-activity.util';
 import { ErrorHandlerService } from '#/common/errors/error-handler.service';
+import { STOP_EVENTS, StopArrivedEvent, StopCompletedEvent, StopSkippedEvent, } from '#/common/events/stop.events';
 
 export type TripDriver = {
   id: string;
@@ -64,6 +55,7 @@ export class DispatchService {
     private readonly cache: RedisCacheService,
     private readonly storageService: StorageService,
     private readonly errorHandler: ErrorHandlerService,
+    private readonly events: EventEmitter2,
   ) {}
 
   /**
@@ -304,6 +296,14 @@ export class DispatchService {
         return trx.getRepository(TripStop).save(stop);
       });
 
+      this.events.emit(
+        STOP_EVENTS.ARRIVED,
+        new StopArrivedEvent(
+          companyId,
+          savedStop.order.orderReference,
+          savedStop.order.customerName,
+        ),
+      );
       await this.trackingService.broadcastTripUpdate(tripId);
     } catch (err) {
       this.errorHandler.handle(err, 'DispatchService.arriveAtStop');
@@ -447,6 +447,15 @@ export class DispatchService {
         return trx.getRepository(TripStop).save(stop);
       });
 
+      this.events.emit(
+        STOP_EVENTS.COMPLETED,
+        new StopCompletedEvent(
+          companyId,
+          savedStop.order.orderReference,
+          savedStop.order.customerName,
+        ),
+      );
+
       await this.trackingService.broadcastTripUpdate(tripId);
 
       return savedStop;
@@ -528,6 +537,15 @@ export class DispatchService {
         return trx.getRepository(TripStop).save(stop);
       });
 
+      this.events.emit(
+        STOP_EVENTS.SKIPPED,
+        new StopSkippedEvent(
+          companyId,
+          savedStop.order.orderReference,
+          savedStop.order.customerName,
+          dto.reason,
+        ),
+      );
       await this.trackingService.broadcastTripUpdate(tripId);
 
       return savedStop;

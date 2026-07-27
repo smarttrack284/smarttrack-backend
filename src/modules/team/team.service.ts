@@ -24,7 +24,6 @@ import {
 import { UsageService } from '#/modules/usage/usage.service';
 import { UsersService } from '#/modules/users/users.service';
 import { MailService } from '#/modules/mail/mail.service';
-import { MailTemplate } from '#/modules/mail/interfaces/mail-template.interface';
 import { InviteMemberDto } from './dto/invite-member.dto';
 import { ChangeRoleDto } from './dto/change-role.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
@@ -41,8 +40,12 @@ import { StoragePath } from '#/common/storage/storage-path.util';
 import { ErrorHandlerService } from '#/common/errors/error-handler.service';
 import {
   TEAM_EVENTS,
+  TeamInviteMemberEvent,
+  TeamInviteMemberEventPayload,
   TeamMemberAcceptedEvent,
   TeamMemberAcceptedEventPayload,
+  TeamMemberRemovedEvent,
+  TeamMemberRoleChangedEvent,
 } from '#/common/events/team.events';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
@@ -107,70 +110,78 @@ export class TeamService {
     actingUserId: string,
     dto: InviteMemberDto,
   ) {
-    await this.requireManagerRole(actingUserId, companyId);
+    try {
+      await this.requireManagerRole(actingUserId, companyId);
 
-    const inviter = await this.userRoleRepo.findOne({
-      where: {
-        userId: actingUserId,
-        companyId,
-      },
-    });
-
-    const savedInvite = await this.withTransaction(undefined, async (trx) => {
-      const userRoleRepo = trx.getRepository(UserRole);
-
-      /**
-       * Check whether the email already has an existing membership.
-       */
-      const existingMembership = await userRoleRepo.findOne({
+      const inviter = await this.userRoleRepo.findOne({
         where: {
-          email: dto.email,
+          userId: actingUserId,
+          companyId,
         },
       });
 
-      if (existingMembership) {
-        if (existingMembership.companyId === companyId) {
+      const savedInvite = await this.withTransaction(undefined, async (trx) => {
+        const userRoleRepo = trx.getRepository(UserRole);
+
+        /**
+         * Check whether the email already has an existing membership.
+         */
+        const existingMembership = await userRoleRepo.findOne({
+          where: {
+            email: dto.email,
+          },
+        });
+
+        if (existingMembership) {
+          if (existingMembership.companyId === companyId) {
+            throw new ResourceConflictException(
+              'This person has already been invited or is already a member of your team.',
+            );
+          }
+
           throw new ResourceConflictException(
-            'This person has already been invited or is already a member of your team.',
+            'This person cannot be invited because they are already associated with another team.',
           );
         }
 
-        throw new ResourceConflictException(
-          'This person cannot be invited because they are already associated with another team.',
-        );
-      }
+        await this.usageService.incrementTeamMemberCount(companyId, trx);
 
-      await this.usageService.incrementTeamMemberCount(companyId, trx);
+        const plainToken = generateInviteToken();
 
-      const plainToken = generateInviteToken();
+        const invite = userRoleRepo.create({
+          userId: null,
+          email: dto.email,
+          companyId,
+          name: null,
+          role: dto.role,
+          status: TeamMemberStatus.INVITED,
+          invitedAt: new Date(),
+          joinedAt: null,
+          inviteTokenHash: hashInviteToken(plainToken),
+          inviteTokenExpiresAt: getInviteTokenExpiry(),
+        });
 
-      const invite = userRoleRepo.create({
-        userId: null,
-        email: dto.email,
-        companyId,
-        name: null,
-        role: dto.role,
-        status: TeamMemberStatus.INVITED,
-        invitedAt: new Date(),
-        joinedAt: null,
-        inviteTokenHash: hashInviteToken(plainToken),
-        inviteTokenExpiresAt: getInviteTokenExpiry(),
+        const saved = await userRoleRepo.save(invite);
+
+        return {
+          saved,
+          plainToken,
+        };
       });
 
-      const saved = await userRoleRepo.save(invite);
+      const payload = await this.buildTeamInviteMemberEventPayload(
+        savedInvite.saved,
+        savedInvite.plainToken,
+        inviter?.name ?? 'Teammate',
+      );
 
-      return {
-        saved,
-        plainToken,
-      };
-    });
-
-    // Send email only after the transaction commits successfully.
-    await this.sendInviteEmail(
-      savedInvite.saved,
-      savedInvite.plainToken,
-      inviter?.name ?? 'A teammate',
-    );
+      this.events.emit(
+        TEAM_EVENTS.INVITE_MEMBER,
+        new TeamInviteMemberEvent(payload),
+      );
+    } catch (err) {
+      this.errorHandler.handle(err, 'TeamService.inviteMember');
+    }
   }
   /**
    * Retrieves a driver by user ID within a specific company.
@@ -346,10 +357,15 @@ export class TeamService {
 
     const saved = await this.userRoleRepo.save(member);
 
-    await this.sendInviteEmail(
+    const payload = await this.buildTeamInviteMemberEventPayload(
       saved,
       plainToken,
-      inviter?.name ?? 'A teammate',
+      inviter?.name ?? 'Teammate',
+    );
+
+    this.events.emit(
+      TEAM_EVENTS.INVITE_MEMBER,
+      new TeamInviteMemberEvent(payload),
     );
   }
 
@@ -405,6 +421,15 @@ export class TeamService {
     member.role = dto.role;
 
     await this.userRoleRepo.save(member);
+
+    this.events.emit(
+      TEAM_EVENTS.ROLE_CHANGED,
+      new TeamMemberRoleChangedEvent(
+        companyId,
+        member.name ?? member.email,
+        dto.role,
+      ),
+    );
   }
 
   /**
@@ -476,20 +501,27 @@ export class TeamService {
           unknown
         > | null;
 
-        const avatarExtension = metadata?.avatar_extension as
-          string | undefined;
+        const avatarFilename = metadata?.avatar_filename as string | undefined;
 
-        if (avatarExtension) {
+        if (avatarFilename) {
           await this.storageService.deleteFile(
             StoragePath.userAvatar(
               companyId,
               removedMember.userId,
-              `avatar.${avatarExtension}`,
+              avatarFilename,
             ),
           );
         }
 
         await this.usersService.deleteSupabaseUser(removedMember.userId);
+
+        this.events.emit(
+          TEAM_EVENTS.REMOVED,
+          new TeamMemberRemovedEvent(
+            companyId,
+            removedMember.name ?? removedMember.email,
+          ),
+        );
       } catch (error) {
         this.logger.error(
           `Failed to fully remove user ${removedMember.userId}.`,
@@ -788,11 +820,11 @@ export class TeamService {
     }
   }
 
-  private async sendInviteEmail(
+  private async buildTeamInviteMemberEventPayload(
     invite: UserRole,
     plainToken: string,
     inviterName: string,
-  ): Promise<void> {
+  ): Promise<TeamInviteMemberEventPayload> {
     const company = await this.dataSource
       .getRepository(Company)
       .findOne({ where: { id: invite.companyId } });
@@ -800,26 +832,17 @@ export class TeamService {
       'CLIENT_URL',
     )}/accept-invite?token=${plainToken}`;
 
-    await this.mailService.sendTemplateEmail({
-      to: invite.email,
-      subject: `You've been invited to join ${company?.name ?? 'SmartTrack'}`,
-      templateName: MailTemplate.TEAM_INVITE,
-      context: {
-        companyName: company?.name ?? 'SmartTrack',
-        inviterName,
-        roleLabel: ROLE_LABELS[invite.role],
-        acceptUrl,
-      },
-    });
+    return {
+      companyId: company?.id as string,
+      inviteEmail: invite.email,
+      companyName: company?.name ?? 'SmartTrack',
+      inviterName,
+      roleLabel: ROLE_LABELS[invite.role],
+      acceptUrl,
+    };
   }
 
   private async findValidInviteByToken(plainToken: string): Promise<UserRole> {
-    // Tokens aren't looked up by hash directly (HMAC output isn't
-    // deterministic-lookup-friendly across all cases the same way a plain
-    // hash would be — it is here, actually, since HMAC is deterministic
-    // for a fixed secret+input, so a direct WHERE works). Scans pending
-    // invites and verifies with timing-safe comparison for defense in
-    // depth against any future change to the hashing scheme.
     const candidates = await this.userRoleRepo.find({
       where: { status: TeamMemberStatus.INVITED },
     });

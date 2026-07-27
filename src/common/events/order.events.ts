@@ -10,6 +10,7 @@ export const ORDER_EVENTS = {
   CANCELLED: 'order.cancelled',
   STATUS_CHANGED: 'order.status_changed',
   DELETED: 'order.deleted',
+  BULK_IMPORTED : 'order.bulk_imported',
 } as const;
 
 export type TeamNotificationRecipient = {
@@ -82,4 +83,12 @@ export interface OrderDeletedPayload {
 
 export class OrderDeletedEvent {
   constructor(public readonly payload: OrderDeletedPayload) {}
+}
+
+export class OrdersBulkImportedEvent {
+  constructor(
+    public readonly companyId: string,
+    public readonly importedCount: number,
+    public readonly failedCount: number,
+  ) {}
 }

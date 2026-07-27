@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { SupabaseAuthGuard } from '#/common/guards/supabase-auth.guard';
@@ -22,8 +23,12 @@ import { UpdateOrderDto } from './dto/update-order.dto';
 import { Roles } from '#/common/decorators/roles.decorator';
 import { RolesGuard } from '#/common/guards/roles.guard';
 import { TeamRoleType } from '#/common/types/team-role.type';
+import { RequirePlan } from '#/common/decorators/require-plan.decorator';
+import { PlanGuard } from '#/common/guards/plan.guard';
+import { SubscriptionPlan } from '#/common/constants/subscription-plan.constant';
+import { FastifyRequest } from 'fastify';
+import { BadRequestAppException } from '#/common/exceptions';
 
-@UseGuards(SupabaseAuthGuard, RolesGuard)
 @Controller('orders')
 export class OrdersController {
   constructor(
@@ -31,8 +36,9 @@ export class OrdersController {
     private readonly usersService: UsersService,
   ) {}
 
-  @Post()
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
+  @Post()
   async createOrder(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateOrderDto,
@@ -40,8 +46,31 @@ export class OrdersController {
     return this.ordersService.createOrder(dto, user.id);
   }
 
-  @Get()
+  @UseGuards(SupabaseAuthGuard, PlanGuard, RolesGuard)
+  @RequirePlan(SubscriptionPlan.STARTER, SubscriptionPlan.PRO)
   @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
+  @Post('import')
+  async importCsv(
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() request: FastifyRequest,
+  ) {
+    const userRole = await this.usersService.getUserRoleByUserId(user.id);
+
+    const file = await request.file();
+    if (!file || file.mimetype !== 'text/csv') {
+      throw new BadRequestAppException('Upload a valid .csv file');
+    }
+    const buffer = await file.toBuffer();
+
+    return this.ordersService.importOrdersFromCsv(
+      userRole.companyId,
+      user.id,
+      buffer,
+    );
+  }
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
+  @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
+  @Get()
   async listOrders(
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: ListOrdersQueryDto,
@@ -64,9 +93,9 @@ export class OrdersController {
   //     userRole.companyId,
   //   );
   // }
-
-  @Get(':orderReference')
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
+  @Get(':orderReference')
   async findOrderByReference(
     @CurrentUser() user: AuthenticatedUser,
     @Param('orderReference') orderReference: string,
@@ -78,13 +107,14 @@ export class OrdersController {
     );
   }
 
-  @Patch(':orderId/status')
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles(
     TeamRoleType.OWNER,
     TeamRoleType.ADMIN,
     TeamRoleType.DISPATCHER,
     TeamRoleType.DRIVER,
   )
+  @Patch(':orderId/status')
   async updateOrderStatus(
     @CurrentUser() user: AuthenticatedUser,
     @Param('orderId', ParseUUIDPipe) orderId: string,
@@ -100,8 +130,9 @@ export class OrdersController {
     return { success: true };
   }
 
-  @Patch(':orderId')
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
+  @Patch(':orderId')
   async updateOrder(
     @CurrentUser() user: AuthenticatedUser,
     @Param('orderId', ParseUUIDPipe) orderId: string,
@@ -118,8 +149,9 @@ export class OrdersController {
     };
   }
 
-  @Delete(':orderId')
+  @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
+  @Delete(':orderId')
   async removeOrder(
     @CurrentUser() user: AuthenticatedUser,
     @Param('orderId', ParseUUIDPipe) orderId: string,

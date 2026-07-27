@@ -1,20 +1,30 @@
-import {Injectable} from '@nestjs/common';
-import {InjectRepository} from '@nestjs/typeorm';
-import {In, Repository} from 'typeorm';
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { In, Repository } from 'typeorm';
 
-import {MailService} from '#/modules/mail/mail.service';
+import { MailService } from '#/modules/mail/mail.service';
 
-import {NotificationSetting} from '#/common/entities/notification-setting.entity';
+import { NotificationSetting } from '#/common/entities/notification-setting.entity';
 
-import {OrderStatus} from '#/common/constants/order-status.constant';
+import { OrderStatus } from '#/common/constants/order-status.constant';
 
-import {OrderCreatedEvent, OrderStatusChangedEvent,} from '#/common/events/order.events';
+import {
+  OrderCreatedEvent,
+  OrderStatusChangedEvent,
+} from '#/common/events/order.events';
 
-import {TEAM_EMAIL_SETTING_MAP, TEAM_TEMPLATE_MAP,} from './notification-mappings';
+import {
+  TEAM_EMAIL_SETTING_MAP,
+  TEAM_TEMPLATE_MAP,
+} from './notification-mappings';
 
-import {getTeamOrderSubject} from './notificcation-subjects';
-import {TeamMemberAcceptedEvent} from '#/common/events/team.events';
-import {MailTemplate} from '#/modules/mail/interfaces/mail-template.interface';
+import { getTeamOrderSubject } from './notificcation-subjects';
+import {
+  TeamInviteMemberEvent,
+  TeamMemberAcceptedEvent,
+} from '#/common/events/team.events';
+import { MailTemplate } from '#/modules/mail/interfaces/mail-template.interface';
+import { CompanyNotificationSetting } from '#/common/entities/company-notification-settings.entity';
 
 type TeamOrderEvent = OrderCreatedEvent | OrderStatusChangedEvent;
 
@@ -25,6 +35,9 @@ export class TeamNotificationsService {
 
     @InjectRepository(NotificationSetting)
     private readonly notificationRepo: Repository<NotificationSetting>,
+
+    @InjectRepository(CompanyNotificationSetting)
+    private readonly companyNotificationRepo: Repository<CompanyNotificationSetting>,
   ) {}
 
   /**
@@ -49,12 +62,33 @@ export class TeamNotificationsService {
     if (!event.payload.recipients.length) {
       return;
     }
+    const companySettings = await this.companyNotificationRepo.findOne({
+      where: { companyId: event.payload.companyId },
+    });
+
+    if (!companySettings || !companySettings.emailTeamMemberJoined) return;
 
     await Promise.all(
       event.payload.recipients.map((r) =>
         this.sendTeamMemberAcceptedEmail(r.email, event),
       ),
     );
+  }
+
+  async handleTeamInviteMember(event: TeamInviteMemberEvent): Promise<void> {
+    const { inviterName, companyName, roleLabel, acceptUrl, inviteEmail } =
+      event.payload;
+    await this.mailService.sendTemplateEmail({
+      to: inviteEmail,
+      subject: `You've been invited to join ${companyName ?? 'SmartTrack'}`,
+      templateName: MailTemplate.TEAM_INVITE,
+      context: {
+        companyName,
+        inviterName,
+        roleLabel,
+        acceptUrl,
+      },
+    });
   }
 
   private async sendTeamMemberAcceptedEmail(

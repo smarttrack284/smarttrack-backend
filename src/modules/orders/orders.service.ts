@@ -1,48 +1,61 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, In, Repository } from 'typeorm';
-import { Order } from '#/common/entities/order.entity';
-import { OrderItem } from '#/common/entities/order-item.entity';
-import {
-  ALLOWED_ORDER_STATUS_TRANSITIONS,
-  OrderPriority,
-  OrderStatus,
-} from '#/common/constants/order-status.constant';
+import {Injectable, Logger} from '@nestjs/common';
+import {InjectDataSource, InjectRepository} from '@nestjs/typeorm';
+import {DataSource, EntityManager, In, Repository} from 'typeorm';
+import {Order} from '#/common/entities/order.entity';
+import {OrderItem} from '#/common/entities/order-item.entity';
+import {ALLOWED_ORDER_STATUS_TRANSITIONS, OrderPriority, OrderStatus,} from '#/common/constants/order-status.constant';
 import {
   BadRequestAppException,
   ForbiddenAppException,
   InvalidStateTransitionException,
+  PlanLimitExceededException,
   ResourceConflictException,
   ResourceNotFoundException,
 } from '#/common/exceptions';
-import { generateTrackingNumber } from '#/common/utils/tracking-number.util';
-import { UsageService } from '#/modules/usage/usage.service';
-import { UsersService } from '#/modules/users/users.service';
-import { CreateOrderDto } from './dto/create-order.dto';
-import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
-import { ListOrdersQueryDto } from './dto/list-orders.query.dto';
-import { generateOrderReference } from '#/common/utils/order-reference.util';
-import { UpdateOrderDto } from '#/modules/orders/dto/update-order.dto';
+import {generateTrackingNumber} from '#/common/utils/tracking-number.util';
+import {UsageService} from '#/modules/usage/usage.service';
+import {UsersService} from '#/modules/users/users.service';
+import {CreateOrderDto} from './dto/create-order.dto';
+import {UpdateOrderStatusDto} from './dto/update-order-status.dto';
+import {ListOrdersQueryDto} from './dto/list-orders.query.dto';
+import {generateOrderReference} from '#/common/utils/order-reference.util';
+import {UpdateOrderDto} from '#/modules/orders/dto/update-order.dto';
 import {
   DELETABLE_ORDER_STATUSES,
   EditableOrderField,
   getEditableFieldsForStatus,
   LOCKED_ORDER_STATUSES,
 } from '#/common/constants/order-editable-fields.constant';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import {EventEmitter2} from '@nestjs/event-emitter';
 import {
   ORDER_EVENTS,
   OrderCreatedEvent,
   OrderDeletedEvent,
   OrderDeletedPayload,
+  OrdersBulkImportedEvent,
   OrderStatusChangedEvent,
 } from '#/common/events/order.events';
-import { RedisCacheService } from '#/common/cache/redis-cache.service';
-import { UserRole } from '#/common/entities/user-role.entity';
-import { TeamService } from '#/modules/team/team.service';
-import { ErrorHandlerService } from '#/common/errors/error-handler.service';
-import { CompaniesService } from '#/modules/companies/companies.service';
-import { ConfigService } from '@nestjs/config';
+import {RedisCacheService} from '#/common/cache/redis-cache.service';
+import {UserRole} from '#/common/entities/user-role.entity';
+import {TeamService} from '#/modules/team/team.service';
+import {ErrorHandlerService} from '#/common/errors/error-handler.service';
+import {CompaniesService} from '#/modules/companies/companies.service';
+import {ConfigService} from '@nestjs/config';
+import {parse} from 'csv-parse/sync';
+import {CsvOrderRowDto} from '#/modules/orders/dto/csv-order-row.dto';
+import {plainToInstance} from 'class-transformer';
+import {validate} from 'class-validator';
+import {mapCsvRowToCreateOrderDto, parseItemsColumn,} from '#/modules/orders/utils/csv-order-row.util';
+
+const MAX_IMPORT_ROWS = 500;
+const MAX_IMPORT_FILE_SIZE_BYTES = 2 * 1024 * 1024; // 2MB
+
+export type ImportOrdersResult = {
+  totalRows: number;
+  imported: number;
+  failed: { row: number; errors: string[] }[];
+  skippedDueToPlanLimit: number;
+};
 
 @Injectable()
 export class OrdersService {
@@ -134,6 +147,115 @@ export class OrdersService {
     } catch (err) {
       this.errorHandler.handle(err, 'OrdersService.createOrder');
     }
+  }
+
+  /**
+   * Imports orders from a CSV buffer. Each row is validated independently
+   * and, if valid, created through the SAME createOrder path a manual
+   * single-order request uses — plan-limit enforcement, tracking-number
+   * generation/uniqueness, and usage increments all apply identically, so
+   * there's no separate "bulk" code path that could drift from single-order
+   * behavior. One bad row doesn't fail the whole import (partial success),
+   * but once the plan's order limit is hit, remaining rows are reported as
+   * skipped rather than attempted — they'd fail anyway, and attempting each
+   * one individually would just be a slower way to find that out.
+   */
+  async importOrdersFromCsv(
+    companyId: string,
+    createdByUserId: string,
+    fileBuffer: Buffer,
+  ): Promise<ImportOrdersResult> {
+    if (fileBuffer.length > MAX_IMPORT_FILE_SIZE_BYTES) {
+      throw new BadRequestAppException('CSV file exceeds the 2MB size limit');
+    }
+
+    let records: Record<string, string>[];
+    try {
+      records = parse(fileBuffer, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+      });
+    } catch (err) {
+      throw new BadRequestAppException(
+        `Could not parse CSV file: ${err instanceof Error ? err.message : 'invalid format'}`,
+      );
+    }
+
+    if (records.length === 0) {
+      throw new BadRequestAppException('CSV file contains no data rows');
+    }
+    if (records.length > MAX_IMPORT_ROWS) {
+      throw new BadRequestAppException(
+        `CSV file has ${records.length} rows — the maximum per import is ${MAX_IMPORT_ROWS}`,
+      );
+    }
+
+    const failed: { row: number; errors: string[] }[] = [];
+    let imported = 0;
+    let skippedDueToPlanLimit = 0;
+    let limitReached = false;
+
+    for (let i = 0; i < records.length; i++) {
+      const rowNumber = i + 2; // +1 for 0-index, +1 for the header row
+
+      if (limitReached) {
+        skippedDueToPlanLimit++;
+        continue;
+      }
+
+      const rowDto = plainToInstance(CsvOrderRowDto, records[i], {
+        enableImplicitConversion: true,
+      });
+      const validationErrors = await validate(rowDto);
+
+      if (validationErrors.length > 0) {
+        failed.push({
+          row: rowNumber,
+          errors: validationErrors.flatMap((e) =>
+            Object.values(e.constraints ?? {}),
+          ),
+        });
+        continue;
+      }
+
+      const parsedItems = parseItemsColumn(rowDto.items);
+      if ('error' in parsedItems) {
+        failed.push({ row: rowNumber, errors: [parsedItems.error] });
+        continue;
+      }
+
+      const createDto = mapCsvRowToCreateOrderDto(rowDto, parsedItems.items);
+
+      try {
+        await this.createOrder(createDto, createdByUserId);
+        imported++;
+      } catch (err) {
+        if (err instanceof PlanLimitExceededException) {
+          limitReached = true;
+          skippedDueToPlanLimit++;
+          continue;
+        }
+        failed.push({
+          row: rowNumber,
+          errors: [
+            err instanceof Error ? err.message : 'Failed to create this order',
+          ],
+        });
+      }
+    }
+
+    this.events.emit(
+      'order.bulk_imported',
+      new OrdersBulkImportedEvent(companyId, imported, failed.length),
+    );
+
+    return {
+      totalRows: records.length,
+      imported,
+      failed,
+      skippedDueToPlanLimit,
+    };
   }
 
   /**
@@ -723,7 +845,7 @@ export class OrdersService {
 
         await trx.getRepository(Order).remove(order);
 
-         await this.usageService.decrementOrderCount(companyId, trx);
+        await this.usageService.decrementOrderCount(companyId, trx);
 
         this.events.emit(ORDER_EVENTS.DELETED, new OrderDeletedEvent(payload));
       });

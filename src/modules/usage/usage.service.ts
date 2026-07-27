@@ -1,13 +1,14 @@
-import { Injectable } from "@nestjs/common";
-import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
-import { DataSource, EntityManager, Repository } from "typeorm";
-import { Usage } from "#/common/entities/usage.entity";
-import { SubscriptionsService } from "#/modules/subscriptions/subscriptions.service";
+import { Injectable } from '@nestjs/common';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
+import { Usage } from '#/common/entities/usage.entity';
+import { SubscriptionsService } from '#/modules/subscriptions/subscriptions.service';
 import {
-    ResourceConflictException,
-    ResourceNotFoundException,
-    UnprocessableEntityException
-} from "#/common/exceptions";
+  PlanLimitExceededException,
+  ResourceConflictException,
+  ResourceNotFoundException,
+  UnprocessableEntityException,
+} from '#/common/exceptions';
 
 @Injectable()
 export class UsageService {
@@ -16,27 +17,6 @@ export class UsageService {
         @InjectRepository(Usage) private readonly usageRepo: Repository<Usage>,
         private readonly subscriptionsService: SubscriptionsService
     ) {}
-
-    private async withTransaction<T>(
-        manager: EntityManager | undefined,
-        work: (manager: EntityManager) => Promise<T>
-    ): Promise<T> {
-        if (manager) return work(manager);
-
-        const queryRunner = this.dataSource.createQueryRunner();
-        await queryRunner.connect();
-        await queryRunner.startTransaction();
-        try {
-            const result = await work(queryRunner.manager);
-            await queryRunner.commitTransaction();
-            return result;
-        } catch (err) {
-            await queryRunner.rollbackTransaction();
-            throw err;
-        } finally {
-            await queryRunner.release();
-        }
-    }
 
     /**
      * Creates the initial usage record for a company.
@@ -165,23 +145,18 @@ export class UsageService {
             }
 
             const subscription =
-                await this.subscriptionsService.getSubscriptionByCompanyId(
-                    companyId,
-                    trx
-                );
+              await this.subscriptionsService.getSubscriptionByCompanyId(
+                companyId,
+                trx,
+              );
 
             const limits = this.subscriptionsService.getPlanLimits(
-                subscription.plan
+              subscription.plan,
             );
 
-            if (
-                limits.orderLimit !== null &&
-                usage.ordersThisPeriod + 1 > limits.orderLimit
-            ) {
-                throw new UnprocessableEntityException(
-                    `Your current ${subscription.plan} plan allows a maximum of ${limits.orderLimit} orders per billing period. Please upgrade your plan to create more orders.`
-                );
-            }
+          if (limits.orderLimit !== null && usage.ordersThisPeriod + 1 > limits.orderLimit) {
+            throw new PlanLimitExceededException('orders', limits.orderLimit);
+          }
 
             usage.ordersThisPeriod += 1;
 
@@ -241,14 +216,15 @@ export class UsageService {
                 subscription.plan
             );
 
-            if (
-                limits.teamMemberLimit !== null &&
-                usage.teamMembersCount + 1 > limits.teamMemberLimit
-            ) {
-                throw new UnprocessableEntityException(
-                    `Your current ${subscription.plan} plan allows a maximum of ${limits.teamMemberLimit} team members. Please upgrade your plan to invite more members.`
-                );
-            }
+          if (
+            limits.teamMemberLimit !== null &&
+            usage.teamMembersCount + 1 > limits.teamMemberLimit
+          ) {
+            throw new PlanLimitExceededException(
+              'team_members',
+              limits.teamMemberLimit,
+            );
+          }
 
             usage.teamMembersCount += 1;
 
@@ -347,5 +323,26 @@ export class UsageService {
 
             return usageRepo.save(usage);
         });
+    }
+
+    private async withTransaction<T>(
+        manager: EntityManager | undefined,
+        work: (manager: EntityManager) => Promise<T>
+    ): Promise<T> {
+        if (manager) return work(manager);
+
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+        try {
+            const result = await work(queryRunner.manager);
+            await queryRunner.commitTransaction();
+            return result;
+        } catch (err) {
+            await queryRunner.rollbackTransaction();
+            throw err;
+        } finally {
+            await queryRunner.release();
+        }
     }
 }

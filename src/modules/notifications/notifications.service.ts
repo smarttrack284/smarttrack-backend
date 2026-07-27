@@ -15,6 +15,7 @@ import { CustomerNotificationsService } from './customer-notifications.service';
 import { TeamNotificationsService } from './team-notifications.service';
 import {
   TEAM_EVENTS,
+  TeamInviteMemberEvent,
   TeamMemberAcceptedEvent,
 } from '#/common/events/team.events';
 
@@ -118,6 +119,10 @@ export class NotificationsService {
     event: TeamMemberAcceptedEvent,
   ): Promise<void> {
     await this.teamNotificationsService.handleTeamMemberAccepted(event);
+  }
+  @OnEvent(TEAM_EVENTS.INVITE_MEMBER)
+  async handleTeamInviteMember(event: TeamInviteMemberEvent): Promise<void> {
+    await this.teamNotificationsService.handleTeamInviteMember(event);
   }
 
   private async getCompanyNotificationSettings(

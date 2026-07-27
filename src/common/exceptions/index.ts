@@ -10,3 +10,4 @@ export * from './payload-too-large.exception';
 export * from './external-service.exception';
 export * from './bad-request.exception';
 export * from './internal-error.exception';
+export * from './plan-limit-exceeded.exception';

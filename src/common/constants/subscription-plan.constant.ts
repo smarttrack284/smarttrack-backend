@@ -18,7 +18,7 @@ export interface PlanFeatures {
     analyticsDashboard: boolean;
 
     customerEmailNotifications: boolean;
-    customerSMSNotifications: boolean;
+    // customerSMSNotifications: boolean;
 
     apiIntegrationAccess: boolean;
     importOrders: boolean;
@@ -38,7 +38,7 @@ export const SUBSCRIPTION_PLAN_FEATURES: Record<
         analyticsDashboard: false,
 
         customerEmailNotifications: true,
-        customerSMSNotifications: false,
+        // customerSMSNotifications: false,
 
         apiIntegrationAccess: false,
         importOrders: false,
@@ -54,7 +54,7 @@ export const SUBSCRIPTION_PLAN_FEATURES: Record<
         analyticsDashboard: true,
 
         customerEmailNotifications: true,
-        customerSMSNotifications: true,
+        // customerSMSNotifications: true,
 
         apiIntegrationAccess: true,
         importOrders: true,
@@ -70,7 +70,7 @@ export const SUBSCRIPTION_PLAN_FEATURES: Record<
         analyticsDashboard: true,
 
         customerEmailNotifications: true,
-        customerSMSNotifications: true,
+        // customerSMSNotifications: true,
 
         apiIntegrationAccess: true,
         importOrders: true,

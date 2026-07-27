@@ -24,18 +24,18 @@ export const CUSTOMER_EMAIL_SETTING_MAP: Record<
  * Maps an order status to the company notification setting
  * that controls customer SMS notifications.
  */
-export const CUSTOMER_SMS_SETTING_MAP: Record<
-  OrderStatus,
-  keyof CompanyNotificationSetting
-> = {
-  [OrderStatus.PENDING]: 'customerSmsOrderCreated',
-  [OrderStatus.ASSIGNED]: 'customerSmsOrderAssigned',
-  [OrderStatus.PICKED_UP]: 'customerSmsOrderPickedUp',
-  [OrderStatus.IN_TRANSIT]: 'customerSmsOrderInTransit',
-  [OrderStatus.DELIVERED]: 'customerSmsOrderDelivered',
-  [OrderStatus.FAILED]: 'customerSmsOrderFailed',
-  [OrderStatus.CANCELLED]: 'customerSmsOrderCancelled',
-};
+// export const CUSTOMER_SMS_SETTING_MAP: Record<
+//   OrderStatus,
+//   keyof CompanyNotificationSetting
+// > = {
+//   [OrderStatus.PENDING]: 'customerSmsOrderCreated',
+//   [OrderStatus.ASSIGNED]: 'customerSmsOrderAssigned',
+//   [OrderStatus.PICKED_UP]: 'customerSmsOrderPickedUp',
+//   [OrderStatus.IN_TRANSIT]: 'customerSmsOrderInTransit',
+//   [OrderStatus.DELIVERED]: 'customerSmsOrderDelivered',
+//   [OrderStatus.FAILED]: 'customerSmsOrderFailed',
+//   [OrderStatus.CANCELLED]: 'customerSmsOrderCancelled',
+// };
 
 /**
  * Maps an order status to the team member notification setting.
