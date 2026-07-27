@@ -26,10 +26,9 @@ export class CreateOrderDto {
     @MaxLength(32)
     customerPhone: string;
 
-    @IsOptional()
     @IsEmail()
     @MaxLength(100)
-    customerEmail?: string;
+    customerEmail: string;
 
     @ValidateNested()
     @Type(() => OrderLocationDto)

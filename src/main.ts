@@ -17,6 +17,7 @@ async function bootstrap() {
     new FastifyAdapter({
       logger: true,
     }),
+    {rawBody:true}
   );
 
   // Security headers

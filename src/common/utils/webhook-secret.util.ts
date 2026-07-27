@@ -3,7 +3,7 @@ import { createCipheriv, createDecipheriv, createHmac, randomBytes, } from 'node
 const ALGORITHM = 'aes-256-gcm';
 
 export function generateWebhookSecret(): string {
-  return `whsec_${randomBytes(24).toString('base64url')}`;
+  return `ST_whsec_${randomBytes(24).toString('base64url')}`;
 }
 
 /**

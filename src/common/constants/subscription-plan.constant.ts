@@ -5,8 +5,9 @@ export enum SubscriptionPlan {
 }
 
 export enum SubscriptionStatus {
-  ACTIVE = "active",
-
+    ACTIVE = "active",
+    CANCELED = "canceled",
+    PAST_DUE = "past_due"
 }
 
 export interface PlanFeatures {
@@ -81,9 +82,7 @@ export const SUBSCRIPTION_PLAN_FEATURES: Record<
 /**
  * Returns all features available for a subscription plan.
  */
-export function getPlanFeatures(
-    plan: SubscriptionPlan
-): PlanFeatures {
+export function getPlanFeatures(plan: SubscriptionPlan): PlanFeatures {
     return SUBSCRIPTION_PLAN_FEATURES[plan];
 }
 

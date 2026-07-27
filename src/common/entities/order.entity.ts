@@ -50,8 +50,8 @@ export class Order {
   @Column({ name: 'customer_phone', type: 'varchar', length: 32 })
   customerPhone: string;
   
-  @Column({ name: 'customer_email', type: 'varchar', length: 100, nullable:true })
-  customerEmail: string | null;
+  @Column({ name: 'customer_email', type: 'varchar', length: 100,  })
+  customerEmail: string 
 
   @Column(() => OrderLocationEmbed, { prefix: 'pickup' })
   pickupLocation: OrderLocationEmbed;
@@ -80,8 +80,8 @@ export class Order {
   notes: string | null;
 
   /** The dispatcher who created this order — plain Supabase user ID, no FK constraint, since auth.users lives in Supabase's own schema, not this database. */
-  @Column({ name: 'created_by_user_id', type: 'uuid' })
-  createdByUserId: string;
+  @Column({ name: 'created_by_user_id', type: 'uuid' , nullable:true})
+  createdByUserId: string | null;
 
   /** The driver currently assigned, if any. Same "no FK to Supabase's schema" reasoning. Null until dispatched. */
   @Column({ name: 'assigned_driver_user_id', type: 'uuid', nullable: true })
