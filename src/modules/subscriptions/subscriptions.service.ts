@@ -1,10 +1,10 @@
 import { Injectable } from "@nestjs/common";
 import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from "typeorm";
 import {
-  PaymentProvider,
-  Subscription,
-} from '#/common/entities/subscription.entity';
+    PaymentProvider,
+    Subscription
+} from "#/common/entities/subscription.entity";
 import {
     SUBSCRIPTION_PLAN_FEATURES,
     SubscriptionPlan,
@@ -116,10 +116,10 @@ export class SubscriptionsService {
         };
     }
 
-    async updateFromStripeSubscription(input: {
+    async updateFromPaystackSubscription(input: {
         companyId: string;
-        stripeCustomerId: string;
-        stripeSubscriptionId: string;
+        paystackCustomerCode: string;
+        paystackSubscriptionCode: string;
         plan: SubscriptionPlan;
         status: SubscriptionStatus;
         currentPeriodEnd: Date;
@@ -130,29 +130,38 @@ export class SubscriptionsService {
         subscription.plan = input.plan;
         subscription.status = input.status;
         subscription.currentPeriodEnd = input.currentPeriodEnd;
-        subscription.paymentProvider = PaymentProvider.STRIPE;
-        subscription.paymentCustomerId = input.stripeCustomerId;
-        subscription.paymentSubscriptionId = input.stripeSubscriptionId;
+        subscription.paymentProvider = PaymentProvider.PAYSTACK;
+        subscription.paymentCustomerId = input.paystackCustomerCode;
+        subscription.paymentSubscriptionId = input.paystackSubscriptionCode;
         return this.subscriptionRepo.save(subscription);
     }
 
-    async downgradeToFreOnCancellation(
-        stripeSubscriptionId: string
+    async downgradeToFreeOnCancellation(
+        paystackSubscriptionCode: string
     ): Promise<void> {
         const subscription = await this.subscriptionRepo.findOne({
-            where: { paymentSubscriptionId: stripeSubscriptionId }
+            where: { paymentSubscriptionId: paystackSubscriptionCode }
         });
-        if (!subscription) return; // unknown subscription ID — nothing to do, don't throw on a webhook replay for something already handled
+        if (!subscription) return; // unknown subscription — likely a replayed/duplicate webhook, safe to ignore
         subscription.plan = SubscriptionPlan.FREE;
         subscription.status = SubscriptionStatus.CANCELED;
         await this.subscriptionRepo.save(subscription);
     }
 
-    async getByStripeCustomerId(
-        stripeCustomerId: string
+    async markPastDue(paystackSubscriptionCode: string): Promise<void> {
+        const subscription = await this.subscriptionRepo.findOne({
+            where: { paymentSubscriptionId: paystackSubscriptionCode }
+        });
+        if (!subscription) return;
+        subscription.status = SubscriptionStatus.PAST_DUE;
+        await this.subscriptionRepo.save(subscription);
+    }
+
+    async getByPaystackCustomerCode(
+        customerCode: string
     ): Promise<Subscription | null> {
         return this.subscriptionRepo.findOne({
-            where: { paymentCustomerId: stripeCustomerId }
+            where: { paymentCustomerId: customerCode }
         });
     }
 

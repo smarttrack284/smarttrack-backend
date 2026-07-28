@@ -14,3 +14,23 @@ export function haversineDistanceMeters(a: GeoPoint, b: GeoPoint): number {
   const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
   return EARTH_RADIUS_METERS * c;
 }
+
+export function calculateHeading(
+    from: GeoPoint,
+    to: GeoPoint,
+): number {
+    const lat1 = from.lat * Math.PI / 180;
+    const lat2 = to.lat * Math.PI / 180;
+
+    const dLon = (to.lng - from.lng) * Math.PI / 180;
+
+    const y = Math.sin(dLon) * Math.cos(lat2);
+
+    const x =
+        Math.cos(lat1) * Math.sin(lat2) -
+        Math.sin(lat1) *
+            Math.cos(lat2) *
+            Math.cos(dLon);
+
+    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}

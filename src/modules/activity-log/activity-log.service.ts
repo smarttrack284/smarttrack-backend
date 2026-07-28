@@ -34,6 +34,11 @@ import {
     ApiKeyCreatedEvent,
     ApiKeyRevokedEvent
 } from "#/common/events/api-key.events";
+import {
+    DRIVER_PRESENCE_EVENTS,
+    DriverOnlineEvent,
+    DriverOfflineEvent
+} from "#/common/events/driver-presence.events";
 
 @Injectable()
 export class ActivityLogService {
@@ -229,6 +234,37 @@ export class ActivityLogService {
             eventType: "api_key.revoked",
             severity: ActivitySeverity.WARNING,
             message: `API key "${event.keyName}" was revoked`
+        });
+    }
+
+    /* Driver events Listeners*/
+
+    @OnEvent(DRIVER_PRESENCE_EVENTS.ONLINE)
+    handleDriverOnline(event: DriverOnlineEvent) {
+        void this.record({
+            companyId: event.companyId,
+            category: ActivityCategory.DRIVER,
+            eventType: "driver.online",
+            message: `${event.driverName} went online`
+        });
+    }
+
+    @OnEvent(DRIVER_PRESENCE_EVENTS.OFFLINE)
+    handleDriverOffline(event: DriverOfflineEvent) {
+        void this.record({
+            companyId: event.companyId,
+            category: ActivityCategory.DRIVER,
+            eventType: "driver.offline",
+            // WARNING specifically when they had unresolved stops — this is the
+            // real trigger point for the frontend's already-defined
+            // emailDriverOffline notification preference, which previously had
+            // no event anywhere in the codebase to actually fire from.
+            severity: event.hadActiveStops
+                ? ActivitySeverity.WARNING
+                : ActivitySeverity.INFO,
+            message: event.hadActiveStops
+                ? `${event.driverName} went offline with active stops still pending`
+                : `${event.driverName} went offline`
         });
     }
 

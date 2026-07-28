@@ -76,6 +76,20 @@ export class Trip {
         nullable: true
     })
     driverLocationClientTimestamp: Date | null;
+    
+    @Column({
+    name: "driver_speed_kph",
+    type: "double precision",
+    nullable: true
+})
+driverSpeedKph: number | null;
+
+@Column({
+    name: "driver_heading",
+    type: "double precision",
+    nullable: true
+})
+driverHeading: number | null;
 
     /** A jump too large/fast to trust immediately — held here pending confirmation by a corroborating follow-up point. Never broadcast while only a candidate. */
     @Column({

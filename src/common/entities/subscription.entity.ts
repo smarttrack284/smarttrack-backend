@@ -15,7 +15,6 @@ import {
 } from '#/common/constants/subscription-plan.constant';
 
 export enum PaymentProvider {
-  STRIPE = 'stripe',
   PAYSTACK = 'paystack',
 }
 

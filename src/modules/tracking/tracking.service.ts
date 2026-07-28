@@ -27,7 +27,8 @@ import {
 } from "#/common/utils/trip-status.util";
 import {
     type GeoPoint,
-    haversineDistanceMeters
+    haversineDistanceMeters,
+    calculateHeading
 } from "#/common/utils/geo-distance.util";
 import { UsersService } from "#/modules/users/users.service";
 import { TrackingEmitterService } from "./tracking-emitter.service";
@@ -96,6 +97,192 @@ export class TrackingService {
      * @throws {ForbiddenAppException}
      * If the requesting user is not allowed to update this trip.
      */
+    // async updateDriverLocation(
+    //         tripId: string,
+    //         driverUserId: string,
+    //         dto: UpdateDriverLocationDto
+    //     ): Promise<LocationUpdateResult> {
+    //         try {
+    //             const trip = await this.tripRepo.findOne({
+    //                 where: { id: tripId },
+    //                 select: {
+    //                     id: true,
+    //                     driverUserId: true,
+    //                     driverLocationLat: true,
+    //                     driverLocationLng: true,
+    //                     driverLocationAccuracy: true,
+    //                     driverLocationClientTimestamp: true,
+    //                     driverLocationUpdatedAt: true,
+    //                     candidateLocationLat: true,
+    //                     candidateLocationLng: true,
+    //                     candidateLocationAt: true
+    //                 }
+    //             });
+    //
+    //             if (!trip) {
+    //                 throw new ResourceNotFoundException(
+    //                     "The requested trip could not be found."
+    //                 );
+    //             }
+    //
+    //             if (trip.driverUserId !== driverUserId) {
+    //                 throw new ForbiddenAppException(
+    //                     "You don't have permission to update this trip."
+    //                 );
+    //             }
+    //
+    //             // Edge case: GPS fix is too imprecise to trust (for example, indoors or
+    //             // in areas with poor signal). Ignore it without treating it as an error.
+    //             if (
+    //                 dto.accuracyMeters !== undefined &&
+    //                 dto.accuracyMeters > MAX_ACCEPTABLE_ACCURACY_METERS
+    //             ) {
+    //                 return {
+    //                     accepted: false,
+    //                     reason: "low_accuracy"
+    //                 };
+    //             }
+    //
+    //             const newPoint: GeoPoint = {
+    //                 lat: dto.lat,
+    //                 lng: dto.lng
+    //             };
+    //
+    //             const newTimestamp = dto.clientTimestamp
+    //                 ? new Date(dto.clientTimestamp)
+    //                 : new Date();
+    //
+    //             // Ignore location updates that arrive out of order.
+    //             if (
+    //                 trip.driverLocationClientTimestamp &&
+    //                 newTimestamp <= trip.driverLocationClientTimestamp
+    //             ) {
+    //                 return {
+    //                     accepted: false,
+    //                     reason: "stale_timestamp"
+    //                 };
+    //             }
+    //
+    //             const hasPriorLocation =
+    //                 trip.driverLocationLat !== null &&
+    //                 trip.driverLocationLng !== null;
+    //
+    //             if (hasPriorLocation) {
+    //                 const lastPoint: GeoPoint = {
+    //                     lat: trip.driverLocationLat!,
+    //                     lng: trip.driverLocationLng!
+    //                 };
+    //
+    //                 const lastTimestamp =
+    //                     trip.driverLocationClientTimestamp ??
+    //                     trip.driverLocationUpdatedAt!;
+    //
+    //                 const elapsedSeconds = Math.max(
+    //                     1,
+    //                     (newTimestamp.getTime() - lastTimestamp.getTime()) / 1000
+    //                 );
+    //
+    //                 const distanceMeters = haversineDistanceMeters(
+    //                     lastPoint,
+    //                     newPoint
+    //                 );
+    //
+    //                 const impliedSpeedKph =
+    //                     distanceMeters / 1000 / (elapsedSeconds / 3600);
+    //
+    //                 // Detect unrealistic jumps caused by inaccurate GPS fixes.
+    //                 const isImplausibleJump =
+    //                     impliedSpeedKph > MAX_PLAUSIBLE_SPEED_KPH &&
+    //                     elapsedSeconds < LARGE_GAP_THRESHOLD_SECONDS;
+    //
+    //                 if (isImplausibleJump) {
+    //                     const hasCandidate =
+    //                         trip.candidateLocationLat !== null &&
+    //                         trip.candidateLocationLng !== null;
+    //
+    //                     if (hasCandidate) {
+    //                         const candidatePoint: GeoPoint = {
+    //                             lat: trip.candidateLocationLat!,
+    //                             lng: trip.candidateLocationLng!
+    //                         };
+    //
+    //                         const distanceFromCandidate = haversineDistanceMeters(
+    //                             candidatePoint,
+    //                             newPoint
+    //                         );
+    //
+    //                         if (distanceFromCandidate <= CONFIRM_RADIUS_METERS) {
+    //                             // Two consecutive readings agree, so accept the
+    //                             // location and clear the candidate.
+    //                             await this.persistAcceptedLocation(
+    //                                 tripId,
+    //                                 newPoint,
+    //                                 dto.accuracyMeters ?? null,
+    //                                 newTimestamp,
+    //                                 true
+    //                             );
+    //
+    //                             await this.enqueueTripBroadcast(tripId);
+    //
+    //                             return {
+    //                                 accepted: true
+    //                             };
+    //                         }
+    //                     }
+    //
+    //                     // Store the point temporarily until another update confirms it.
+    //                     await this.tripRepo.update(
+    //                         { id: tripId },
+    //                         {
+    //                             candidateLocationLat: newPoint.lat,
+    //                             candidateLocationLng: newPoint.lng,
+    //                             candidateLocationAt: newTimestamp
+    //                         }
+    //                     );
+    //
+    //                     return {
+    //                         accepted: false,
+    //                         reason: "quarantined_pending_confirmation"
+    //                     };
+    //                 }
+    //
+    //                 // Valid movement clears any previously quarantined candidate.
+    //                 const movedFarEnough = distanceMeters >= MIN_MOVEMENT_METERS;
+    //
+    //                 const staleEnoughForHeartbeat =
+    //                     !trip.driverLocationUpdatedAt ||
+    //                     Date.now() - trip.driverLocationUpdatedAt.getTime() >=
+    //                         HEARTBEAT_INTERVAL_MS;
+    //
+    //                 if (!movedFarEnough && !staleEnoughForHeartbeat) {
+    //                     return {
+    //                         accepted: false,
+    //                         reason: "no_change"
+    //                     };
+    //                 }
+    //             }
+    //
+    //             await this.persistAcceptedLocation(
+    //                 tripId,
+    //                 newPoint,
+    //                 dto.accuracyMeters ?? null,
+    //                 newTimestamp,
+    //                 true
+    //             );
+    //
+    //             await this.enqueueTripBroadcast(tripId);
+    //
+    //             return {
+    //                 accepted: true
+    //             };
+    //         } catch (err) {
+    //             this.errorHandler.handle(
+    //                 err,
+    //                 "TrackingService.updateDriverLocation"
+    //             );
+    //         }
+    //     }
+
     async updateDriverLocation(
         tripId: string,
         driverUserId: string,
@@ -166,6 +353,9 @@ export class TrackingService {
                 trip.driverLocationLat !== null &&
                 trip.driverLocationLng !== null;
 
+            let speedKph = 0;
+            let heading: number | null = null;
+
             if (hasPriorLocation) {
                 const lastPoint: GeoPoint = {
                     lat: trip.driverLocationLat!,
@@ -188,6 +378,10 @@ export class TrackingService {
 
                 const impliedSpeedKph =
                     distanceMeters / 1000 / (elapsedSeconds / 3600);
+
+                speedKph = Math.round(impliedSpeedKph * 10) / 10;
+
+                heading = calculateHeading(lastPoint, newPoint);
 
                 // Detect unrealistic jumps caused by inaccurate GPS fixes.
                 const isImplausibleJump =
@@ -218,7 +412,9 @@ export class TrackingService {
                                 newPoint,
                                 dto.accuracyMeters ?? null,
                                 newTimestamp,
-                                true
+                                true,
+                                heading,
+                                speedKph
                             );
 
                             await this.enqueueTripBroadcast(tripId);
@@ -266,7 +462,9 @@ export class TrackingService {
                 newPoint,
                 dto.accuracyMeters ?? null,
                 newTimestamp,
-                true
+                true,
+                heading,
+                speedKph
             );
 
             await this.enqueueTripBroadcast(tripId);
@@ -458,11 +656,29 @@ export class TrackingService {
                 source: trip.etaSource,
                 calculatedAt: trip.etaCalculatedAt
             },
+            // driverLocation: trip.driverLocationLat
+            //                 ? {
+            //                       lat: trip.driverLocationLat,
+            //                       lng: trip.driverLocationLng,
+            //                       accuracyMeters: trip.driverLocationAccuracy,
+            //                       updatedAt: trip.driverLocationUpdatedAt
+            //                   }
+            //                 : null,
             driverLocation: trip.driverLocationLat
                 ? {
                       lat: trip.driverLocationLat,
                       lng: trip.driverLocationLng,
+
                       accuracyMeters: trip.driverLocationAccuracy,
+
+                      gpsQuality: this.getGpsQuality(
+                          trip.driverLocationAccuracy
+                      ),
+
+                      speedKph: trip.driverSpeedKph,
+
+                      heading: trip.driverHeading,
+
                       updatedAt: trip.driverLocationUpdatedAt
                   }
                 : null,
@@ -590,7 +806,9 @@ export class TrackingService {
         point: GeoPoint,
         accuracyMeters: number | null,
         clientTimestamp: Date,
-        clearCandidate: boolean
+        clearCandidate: boolean,
+        heading: number | null,
+        speedKph: number 
     ): Promise<void> {
         await this.tripRepo.update(
             { id: tripId },
@@ -600,6 +818,8 @@ export class TrackingService {
                 driverLocationAccuracy: accuracyMeters,
                 driverLocationClientTimestamp: clientTimestamp,
                 driverLocationUpdatedAt: new Date(),
+                driverSpeedKph: speedKph,
+                driverHeading: heading,
                 ...(clearCandidate
                     ? {
                           candidateLocationLat: null,
@@ -701,5 +921,26 @@ export class TrackingService {
                 : null,
             updatedAt: new Date().toISOString()
         };
+    }
+    private getGpsQuality(
+        accuracy: number | null
+    ): "excellent" | "good" | "fair" | "poor" | null {
+        if (accuracy == null) {
+            return null;
+        }
+
+        if (accuracy <= 5) {
+            return "excellent";
+        }
+
+        if (accuracy <= 10) {
+            return "good";
+        }
+
+        if (accuracy <= 25) {
+            return "fair";
+        }
+
+        return "poor";
     }
 }

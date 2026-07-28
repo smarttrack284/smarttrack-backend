@@ -10,6 +10,10 @@ export enum SubscriptionStatus {
     PAST_DUE = "past_due"
 }
 
+export enum PaymentProvider {
+  PAYSTACK = 'paystack',
+}
+
 export interface PlanFeatures {
     orderLimit: number | null;
     teamMemberLimit: number | null;
