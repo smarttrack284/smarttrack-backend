@@ -1,18 +1,20 @@
-import { Module } from "@nestjs/common";
-import { TypeOrmModule } from "@nestjs/typeorm";
-import { Order } from "#/common/entities/order.entity";
-import { TripStop } from "#/common/entities/trip-stop.entity";
-import { Company } from "#/common/entities/company.entity";
-import { UsersModule } from "#/modules/users/users.module";
-import { AnalyticsService } from "./analytics.service";
-import { AnalyticsController } from "./analytics.controller";
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Order } from '#/common/entities/order.entity';
+import { TripStop } from '#/common/entities/trip-stop.entity';
+import { Company } from '#/common/entities/company.entity';
+import { UsersModule } from '#/modules/users/users.module';
+import { AnalyticsService } from './analytics.service';
+import { AnalyticsController } from './analytics.controller';
+import { SubscriptionsModule } from '#/modules/subscriptions/subscriptions.module';
 
 @Module({
-    imports: [
-        TypeOrmModule.forFeature([Order, TripStop, Company]),
-        UsersModule
-    ],
-    controllers: [AnalyticsController],
-    providers: [AnalyticsService]
+  imports: [
+    TypeOrmModule.forFeature([Order, TripStop, Company]),
+    UsersModule,
+    SubscriptionsModule,
+  ],
+  controllers: [AnalyticsController],
+  providers: [AnalyticsService],
 })
 export class AnalyticsModule {}

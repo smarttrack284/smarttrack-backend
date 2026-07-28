@@ -19,6 +19,6 @@ export class TeamExternalController {
   @Get('drivers/available')
   async listAvailableDrivers(@Req() request: FastifyRequest) {
     const companyId = request.apiKeyCompanyId!;
-    return this.teamService.listAvailableDrivers(companyId);
+    return this.teamService.listAvailableDriversForCompany(companyId);
   }
 }

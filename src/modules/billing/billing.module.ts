@@ -7,6 +7,7 @@ import { UsageModule } from '#/modules/usage/usage.module';
 import { UsersModule } from '#/modules/users/users.module';
 import { BillingService } from './billing.service';
 import { BillingController } from './billing.controller';
+import { CompaniesModule } from '#/modules/companies/companies.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { BillingController } from './billing.controller';
     SubscriptionsModule,
     UsageModule,
     UsersModule,
+    CompaniesModule
   ],
   controllers: [BillingController],
   providers: [BillingService],

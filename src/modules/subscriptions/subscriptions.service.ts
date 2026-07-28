@@ -1,7 +1,10 @@
 import { Injectable } from "@nestjs/common";
 import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
-import { DataSource, EntityManager, Repository } from "typeorm";
-import { Subscription } from "#/common/entities/subscription.entity";
+import { DataSource, EntityManager, Repository } from 'typeorm';
+import {
+  PaymentProvider,
+  Subscription,
+} from '#/common/entities/subscription.entity';
 import {
     SUBSCRIPTION_PLAN_FEATURES,
     SubscriptionPlan,

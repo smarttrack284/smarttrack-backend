@@ -11,10 +11,11 @@ import { TripsGateway } from '#/modules/dispatch/trips.gateway';
 import { TripsEmitterService } from '#/modules/dispatch/trips-emitter.service';
 import { TripsSubscriptionRegistry } from '#/modules/dispatch/trips-subscription-registry.service';
 import { UserRole } from '#/common/entities/user-role.entity';
+import { ApiKey } from '#/common/entities/api-key.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Trip, TripStop, UserRole]),
+    TypeOrmModule.forFeature([Trip, TripStop, UserRole,ApiKey]),
     OrdersModule,
     UsersModule,
     forwardRef(() => TrackingModule),
