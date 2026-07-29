@@ -10,7 +10,7 @@ import { MAIL_QUEUE_NAME, MailJobName, type SendTemplateEmailJobData, } from './
  * The actual sender. Concurrency is capped via @Processor's `concurrency`
  * option below — this is the direct fix for "too many concurrent sends":
  * even if 500 jobs are enqueued at once (e.g. a dispatcher batch-updating
- * many orders), only N jobs run at a time, and BullMQ's rate limiter caps
+ * many order), only N jobs run at a time, and BullMQ's rate limiter caps
  * how many complete per time window, which is what actually protects
  * against hitting the email provider's own rate limit.
  */

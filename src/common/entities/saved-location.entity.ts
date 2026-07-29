@@ -21,7 +21,7 @@ export enum SavedLocationKind {
  * kind) — the reusable pickup points dispatchers pick from in
  * LocationSearchDialog instead of re-geocoding the same shop/warehouse
  * every time, which is what keeps pickup coordinates identical across
- * orders (see groupStopsBySharedPickup on the trip model).
+ * order (see groupStopsBySharedPickup on the trip model).
  */
 @Entity('saved_locations')
 export class SavedLocation {

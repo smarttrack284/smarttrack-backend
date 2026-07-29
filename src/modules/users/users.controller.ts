@@ -70,12 +70,6 @@ export class UsersController {
     return { success: true };
   }
 
-  @Get('notification-settings')
-  async getNotificationSettings(@CurrentUser() user: AuthenticatedUser) {
-    await this.usersService.getUserRoleByUserId(user.id);
-    return this.usersService.getNotificationSettings(user.id);
-  }
-
   @Patch('notification-settings')
   async updateNotificationSettings(
     @CurrentUser() user: AuthenticatedUser,
@@ -83,5 +77,38 @@ export class UsersController {
   ) {
     await this.usersService.getUserRoleByUserId(user.id);
     return this.usersService.updateNotificationSettings(user.id, dto);
+  }
+
+  @Get('notification-settings')
+  async getNotificationSettings(@CurrentUser() user: AuthenticatedUser) {
+    await this.usersService.getUserRoleByUserId(user.id);
+    return this.usersService.getNotificationSettings(user.id);
+  }
+
+  /**
+   * The single source of truth for "does this signed-in user have a
+   * company yet." Used by the frontend login flow AND the /register and
+   * /dashboard route guards — all three must agree, or a user could pass
+   * one check and fail another. Returns hasCompany: false rather than a
+   * 404 when no UserRole exists, since "not onboarded yet" is an
+   * expected, valid state for a freshly signed-up user, not an error.
+   */
+  @Get('status')
+  async getAccountStatus(@CurrentUser() user: AuthenticatedUser) {
+    try {
+      const userRole = await this.usersService.getUserRoleByUserId(user.id);
+      return {
+        hasCompany: true,
+        companyId: userRole.companyId,
+        role: userRole.role,
+        name: userRole.name,
+      };
+    } catch {
+      // No UserRole row anywhere for this user — they signed up but never
+      // completed company registration (or their invite was never
+      // accepted). This is the exact case this whole feature protects
+      // against.
+      return { hasCompany: false, companyId: null, role: null, name: null };
+    }
   }
 }

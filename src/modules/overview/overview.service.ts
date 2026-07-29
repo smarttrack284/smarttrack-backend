@@ -17,7 +17,10 @@ import { startOfTodayInTimezone } from '#/common/utils/timezone-date.util';
 import { OrdersService } from '#/modules/orders/orders.service';
 import { OverviewEmitterService } from './overview-emitter.service';
 import { ActivityLogService } from '#/modules/activity-log/activity-log.service';
-import { OrderPriority, OrderStatus, } from '#/common/constants/order-status.constant';
+import {
+  OrderPriority,
+  OrderStatus,
+} from '#/common/constants/order-status.constant';
 import { TeamRoleType } from '#/common/types/team-role.type';
 import { TeamMemberStatus } from '#/common/constants/team-member-status.constant';
 import { UserRole } from '#/common/entities/user-role.entity';
@@ -62,7 +65,7 @@ export class OverviewService {
     );
   }
 
-  /** Enriches the existing paginated orders list with driver name (already built) and live ETA (looked up per-order from its active trip, if any) — reuses listOrdersForCompanyCached rather than a new query path. */
+  /** Enriches the existing paginated order list with driver name (already built) and live ETA (looked up per-order from its active trip, if any) — reuses listOrdersForCompanyCached rather than a new query path. */
   async getAdvancedRecentOrders(companyId: string, query: ListOrdersQueryDto) {
     const result = await this.ordersService.listOrdersForCompanyCached(
       companyId,
@@ -202,10 +205,10 @@ export class OverviewService {
         yesterdayCounts.completedToday,
       ),
       priorityBreakdown,
-      slaBreaches, // pending orders older than SLA_PENDING_HOURS — a real operational warning signal
+      slaBreaches, // pending order older than SLA_PENDING_HOURS — a real operational warning signal
       driverUtilization: driverStats,
       avgDelivery7d,
-      onTimeRate7d, // % of delivered orders with a scheduledFor that were completed on/before it — null if no scheduled orders in range
+      onTimeRate7d, // % of delivered order with a scheduledFor that were completed on/before it — null if no scheduled order in range
     };
   }
 
@@ -277,7 +280,7 @@ export class OverviewService {
     return raw?.avgMinutes ? Math.round(Number(raw.avgMinutes)) : 0;
   }
 
-  /** % of delivered orders (with a scheduledFor set) completed at or before their scheduled time. Orders with no schedule are excluded from the denominator — they have no "on time" to measure against. */
+  /** % of delivered order (with a scheduledFor set) completed at or before their scheduled time. Orders with no schedule are excluded from the denominator — they have no "on time" to measure against. */
   private async computeOnTimeRateSince(
     companyId: string,
     since: Date,

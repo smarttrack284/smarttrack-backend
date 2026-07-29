@@ -3,7 +3,7 @@ import { AppException } from './app.exception';
 import { ErrorCode } from '../constants/error-code-enum';
 
 /**
- * Thrown SPECIFICALLY when a plan's usage limit (orders, team members,
+ * Thrown SPECIFICALLY when a plan's usage limit (order, team members,
  * etc.) is hit — distinct from UnprocessableEntityException's general
  * "well-formed but violates a business rule" case. This exists so
  * callers that need to react differently to "you hit your plan limit"

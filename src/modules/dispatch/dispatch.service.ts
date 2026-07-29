@@ -2,13 +2,23 @@ import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Brackets, DataSource, EntityManager, In, Repository } from 'typeorm';
 import { Trip } from '#/common/entities/trip.entity';
-import { ProofOfDeliveryMethod, TripStop, } from '#/common/entities/trip-stop.entity';
+import {
+  ProofOfDeliveryMethod,
+  TripStop,
+} from '#/common/entities/trip-stop.entity';
 import { StopStatus } from '#/common/constants/stop-status.constant';
 import { OrderStatus } from '#/common/constants/order-status.constant';
 import { TripStatus } from '#/common/constants/trip-status.constant';
 import { TeamRoleType } from '#/common/types/team-role.type';
-import { deriveTripStatus, getTripProgress, } from '#/common/utils/trip-status.util';
-import { BadRequestAppException, ForbiddenAppException, ResourceNotFoundException, } from '#/common/exceptions';
+import {
+  deriveTripStatus,
+  getTripProgress,
+} from '#/common/utils/trip-status.util';
+import {
+  BadRequestAppException,
+  ForbiddenAppException,
+  ResourceNotFoundException,
+} from '#/common/exceptions';
 import { OrdersService } from '#/modules/orders/orders.service';
 import { UsersService } from '#/modules/users/users.service';
 import { TrackingService } from '#/modules/tracking/tracking.service';
@@ -24,7 +34,12 @@ import { CompleteStopDto } from './dto/complete-stop.dto';
 import { UserRole } from '#/common/entities/user-role.entity';
 import { deriveTripActivity } from '#/common/utils/trip-activity.util';
 import { ErrorHandlerService } from '#/common/errors/error-handler.service';
-import { STOP_EVENTS, StopArrivedEvent, StopCompletedEvent, StopSkippedEvent, } from '#/common/events/stop.events';
+import {
+  STOP_EVENTS,
+  StopArrivedEvent,
+  StopCompletedEvent,
+  StopSkippedEvent,
+} from '#/common/events/stop.events';
 
 export type TripDriver = {
   id: string;
@@ -59,15 +74,15 @@ export class DispatchService {
   ) {}
 
   /**
-   * Dispatches orders to a driver by creating a delivery trip.
+   * Dispatches order to a driver by creating a delivery trip.
    *
-   * Validates the selected driver, creates a trip, assigns pending orders to
+   * Validates the selected driver, creates a trip, assigns pending order to
    * the driver, creates trip stops, and broadcasts the trip update after
    * successful dispatch.
    *
    * @param companyId - The unique identifier of the company.
-   * @param dispatcherUserId - The unique identifier of the user dispatching orders.
-   * @param dto - The dispatch request containing the driver and orders.
+   * @param dispatcherUserId - The unique identifier of the user dispatching order.
+   * @param dto - The dispatch request containing the driver and order.
    *
    * @returns The created trip with its assigned stops.
    *
@@ -119,7 +134,7 @@ export class DispatchService {
 
           if (order.status !== OrderStatus.PENDING) {
             throw new BadRequestAppException(
-              'One or more selected orders are no longer available for dispatch.',
+              'One or more selected order are no longer available for dispatch.',
             );
           }
 
@@ -155,7 +170,7 @@ export class DispatchService {
   /**
    * Retrieves a trip and verifies that it belongs to a company.
    *
-   * Includes trip stops with their associated orders and order items.
+   * Includes trip stops with their associated order and order items.
    * Stops are returned in their delivery sequence order.
    *
    * @param tripId - The unique identifier of the trip.

@@ -15,7 +15,7 @@ import { CompaniesModule } from '#/modules/companies/companies.module';
     SubscriptionsModule,
     UsageModule,
     UsersModule,
-    CompaniesModule
+    CompaniesModule,
   ],
   controllers: [BillingController],
   providers: [BillingService],

@@ -25,7 +25,7 @@ import { ListOrdersQueryDto } from './dto/list-orders.query.dto';
 
 /**
  * Debounce window for coalescing bursts of events into one recompute pass —
- * e.g. a dispatcher batch-dispatching 10 orders at once fires 10
+ * e.g. a dispatcher batch-dispatching 10 order at once fires 10
  * OrderStatusChangedEvents in quick succession; without this, that's 10
  * separate recompute-and-emit passes instead of 1.
  *
@@ -81,7 +81,7 @@ export class OrdersGateway implements OnGatewayInit, OnGatewayDisconnect {
     await this.registry.remove(socket.id);
   }
 
-  @SubscribeMessage('subscribe:orders')
+  @SubscribeMessage('subscribe:order')
   async handleSubscribe(
     @ConnectedSocket() socket: AuthenticatedSocket,
     @MessageBody() query: ListOrdersQueryDto,
@@ -97,10 +97,10 @@ export class OrdersGateway implements OnGatewayInit, OnGatewayDisconnect {
       userRole.companyId,
       query,
     );
-    socket.emit('orders:update', result);
+    socket.emit('order:update', result);
   }
 
-  @SubscribeMessage('unsubscribe:orders')
+  @SubscribeMessage('unsubscribe:order')
   async handleUnsubscribe(@ConnectedSocket() socket: AuthenticatedSocket) {
     await this.registry.remove(socket.id);
   }
@@ -170,7 +170,7 @@ export class OrdersGateway implements OnGatewayInit, OnGatewayDisconnect {
             query,
           );
           for (const socketId of socketIds) {
-            this.emitter.emitToSocket(socketId, 'orders:update', result);
+            this.emitter.emitToSocket(socketId, 'order:update', result);
           }
         },
       ),

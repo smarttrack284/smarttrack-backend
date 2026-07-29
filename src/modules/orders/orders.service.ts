@@ -49,7 +49,10 @@ import { parse } from 'csv-parse/sync';
 import { CsvOrderRowDto } from '#/modules/orders/dto/csv-order-row.dto';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { mapCsvRowToCreateOrderDto, parseItemsColumn, } from '#/modules/orders/utils/csv-order-row.util';
+import {
+  mapCsvRowToCreateOrderDto,
+  parseItemsColumn,
+} from '#/modules/orders/utils/csv-order-row.util';
 
 const MAX_IMPORT_ROWS = 500;
 const MAX_IMPORT_FILE_SIZE_BYTES = 2 * 1024 * 1024; // 2MB
@@ -160,7 +163,7 @@ export class OrdersService {
   }
 
   /**
-   * Imports orders from a CSV buffer. Each row is validated independently
+   * Imports order from a CSV buffer. Each row is validated independently
    * and, if valid, created through the SAME createOrder path a manual
    * single-order request uses — plan-limit enforcement, tracking-number
    * generation/uniqueness, and usage increments all apply identically, so
@@ -471,16 +474,16 @@ export class OrdersService {
   }
 
   /**
-   * Retrieves a paginated list of orders belonging to a company.
+   * Retrieves a paginated list of order belonging to a company.
    *
    * Supports filtering by status, searching by tracking number, customer name,
-   * or order reference, and filtering orders by creation date range.
+   * or order reference, and filtering order by creation date range.
    * Also includes assigned driver names when available.
    *
    * @param companyId - The unique identifier of the company.
    * @param query - The order listing filters and pagination options.
    *
-   * @returns A paginated list of company orders with total count.
+   * @returns A paginated list of company order with total count.
    */
   async listOrdersForCompany(companyId: string, query: ListOrdersQueryDto) {
     try {
@@ -943,8 +946,8 @@ export class OrdersService {
   /**
    * Retrieves order KPI counts for a company.
    *
-   * Calculates key order metrics including orders created today, currently
-   * active deliveries, completed orders today, and failed orders today.
+   * Calculates key order metrics including order created today, currently
+   * active deliveries, completed order today, and failed order today.
    *
    * @param companyId - The unique identifier of the company.
    * @param startOfToday - The start timestamp used for today's calculations.
@@ -989,16 +992,16 @@ export class OrdersService {
   }
 
   /**
-   * Retrieves a company's orders using cache when available.
+   * Retrieves a company's order using cache when available.
    *
    * Generates a cache key based on the company and query parameters. If cached
-   * data exists, it is returned immediately; otherwise, the orders are fetched
+   * data exists, it is returned immediately; otherwise, the order are fetched
    * and stored in cache for future requests.
    *
    * @param companyId - The unique identifier of the company.
    * @param query - The order listing filters and pagination options.
    *
-   * @returns A paginated list of company orders.
+   * @returns A paginated list of company order.
    */
   async listOrdersForCompanyCached(
     companyId: string,
@@ -1032,14 +1035,14 @@ export class OrdersService {
   }
 
   /**
-   * Retrieves driver names for a list of orders.
+   * Retrieves driver names for a list of order.
    *
-   * Finds the drivers assigned to the provided orders within a company and
+   * Finds the drivers assigned to the provided order within a company and
    * returns a map of user IDs to driver names. Orders without assigned drivers
    * or unavailable driver records are ignored.
    *
    * @param companyId - The unique identifier of the company.
-   * @param orders - The orders containing assigned driver references.
+   * @param orders - The order containing assigned driver references.
    *
    * @returns A map containing driver user IDs and their names.
    */

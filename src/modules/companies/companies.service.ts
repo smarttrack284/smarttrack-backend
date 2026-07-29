@@ -339,7 +339,7 @@ export class CompaniesService {
    *
    * Removes the company record and relies on database cascade rules to clean up
    * related records such as memberships, notification settings, locations,
-   * API keys, orders, and trips. It also removes company storage files and
+   * API keys, order, and trips. It also removes company storage files and
    * deletes associated Supabase user accounts.
    *
    * @param companyId - The unique identifier of the company.
