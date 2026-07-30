@@ -63,7 +63,7 @@ export class OverviewController {
   @UseGuards(SupabaseAuthGuard, PlanGuard, RolesGuard)
   @RequirePlan(SubscriptionPlan.STARTER, SubscriptionPlan.PRO)
   @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
-  @Get('advanced/order')
+  @Get('advanced/orders')
   async getAdvancedRecentOrders(
     @CurrentUser() user: AuthenticatedUser,
     @Query() ordersQuery: ListOrdersQueryDto,

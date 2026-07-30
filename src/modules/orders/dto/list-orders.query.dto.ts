@@ -9,10 +9,18 @@ import {
 } from 'class-validator';
 import { OrderStatus } from '#/common/constants/order-status.constant';
 
+export enum SortOrder {
+  NEWEST = 'newest',
+  OLDEST = 'oldest',
+}
 export class ListOrdersQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @IsOptional()
+  @IsEnum(SortOrder)
+  sort?: SortOrder;
 
   @IsOptional()
   @IsEnum(OrderStatus)

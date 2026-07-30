@@ -21,7 +21,7 @@ import { UsageService } from '#/modules/usage/usage.service';
 import { UsersService } from '#/modules/users/users.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
-import { ListOrdersQueryDto } from './dto/list-orders.query.dto';
+import { ListOrdersQueryDto, SortOrder } from './dto/list-orders.query.dto';
 import { generateOrderReference } from '#/common/utils/order-reference.util';
 import { UpdateOrderDto } from '#/modules/orders/dto/update-order.dto';
 import {
@@ -49,10 +49,7 @@ import { parse } from 'csv-parse/sync';
 import { CsvOrderRowDto } from '#/modules/orders/dto/csv-order-row.dto';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import {
-  mapCsvRowToCreateOrderDto,
-  parseItemsColumn,
-} from '#/modules/orders/utils/csv-order-row.util';
+import { mapCsvRowToCreateOrderDto, parseItemsColumn, } from '#/modules/orders/utils/csv-order-row.util';
 
 const MAX_IMPORT_ROWS = 500;
 const MAX_IMPORT_FILE_SIZE_BYTES = 2 * 1024 * 1024; // 2MB
@@ -526,7 +523,9 @@ export class OrdersService {
         });
       }
 
-      qb.orderBy('order.createdAt', 'DESC')
+      const sortDirection = query.sort === SortOrder.OLDEST ? 'ASC' : 'DESC';
+
+      qb.orderBy('order.createdAt', sortDirection)
         .skip((page - 1) * pageSize)
         .take(pageSize);
 
@@ -554,7 +553,6 @@ export class OrdersService {
       this.errorHandler.handle(err, 'OrdersService.listOrdersForCompany');
     }
   }
-
   /**
    * Updates an order's status for a company.
    *
