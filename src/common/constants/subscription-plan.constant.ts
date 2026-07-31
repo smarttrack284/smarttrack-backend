@@ -11,7 +11,7 @@ export enum SubscriptionStatus {
 }
 
 export enum PaymentProvider {
-  PAYSTACK = 'paystack',
+    PAYSTACK = "paystack"
 }
 
 export interface PlanFeatures {
@@ -21,6 +21,7 @@ export interface PlanFeatures {
     basicOverviewDashboard: boolean;
     advancedOverviewDashboard: boolean;
     analyticsDashboard: boolean;
+    activityLog: boolean;
 
     customerEmailNotifications: boolean;
     // customerSMSNotifications: boolean;
@@ -40,6 +41,7 @@ export const SUBSCRIPTION_PLAN_FEATURES: Record<
 
         basicOverviewDashboard: true,
         advancedOverviewDashboard: false,
+        activityLog: false,
         analyticsDashboard: false,
 
         customerEmailNotifications: true,
@@ -56,6 +58,7 @@ export const SUBSCRIPTION_PLAN_FEATURES: Record<
 
         basicOverviewDashboard: true,
         advancedOverviewDashboard: false,
+        activityLog: false,
         analyticsDashboard: true,
 
         customerEmailNotifications: true,
@@ -72,6 +75,7 @@ export const SUBSCRIPTION_PLAN_FEATURES: Record<
 
         basicOverviewDashboard: true,
         advancedOverviewDashboard: true,
+        activityLog: true,
         analyticsDashboard: true,
 
         customerEmailNotifications: true,

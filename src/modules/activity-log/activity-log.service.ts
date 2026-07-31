@@ -39,12 +39,18 @@ import {
     DriverOnlineEvent,
     DriverOfflineEvent
 } from "#/common/events/driver-presence.events";
+import { SubscriptionsService } from "#/modules/subscriptions/subscriptions.service";
+import {
+    SubscriptionPlan,
+    getPlanFeatures
+} from "#/common/constants/subscription-plan.constant";
 
 @Injectable()
 export class ActivityLogService {
     constructor(
         @InjectRepository(ActivityLog)
-        private readonly repo: Repository<ActivityLog>
+        private readonly repo: Repository<ActivityLog>,
+        private readonly subscriptionsService: SubscriptionsService
     ) {}
 
     async record(input: {
@@ -57,6 +63,15 @@ export class ActivityLogService {
         actorUserId?: string | null;
         actorName?: string | null;
     }): Promise<void> {
+        const subscription =
+            await this.subscriptionsService.getSubscriptionByCompanyId(
+                companyId
+            );
+        const features = getPlanFeatures(subscription.plan);
+
+        if (!features.activityLog)
+            return;
+
         const log = this.repo.create({
             companyId: input.companyId,
             category: input.category,
