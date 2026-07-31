@@ -35,7 +35,7 @@ export const SUBSCRIPTION_PLAN_FEATURES: Record<
     PlanFeatures
 > = {
     [SubscriptionPlan.FREE]: {
-        orderLimit: 50,
+        orderLimit: 10,
         teamMemberLimit: 2,
 
         basicOverviewDashboard: true,
@@ -55,7 +55,7 @@ export const SUBSCRIPTION_PLAN_FEATURES: Record<
         teamMemberLimit: 10,
 
         basicOverviewDashboard: true,
-        advancedOverviewDashboard: true,
+        advancedOverviewDashboard: false,
         analyticsDashboard: true,
 
         customerEmailNotifications: true,

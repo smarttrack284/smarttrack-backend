@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, Repository } from 'typeorm';
 import { Order } from '#/common/entities/order.entity';
 import { OrderItem } from '#/common/entities/order-item.entity';
 import {
@@ -1198,7 +1198,7 @@ export class OrdersService {
     const driver = await userRoleRepo.findOne({
       where: {
         companyId: order.companyId,
-        userId: order.assignedDriverUserId as string,
+        userId: order.assignedDriverUserId ?? IsNull(),
       },
     });
 

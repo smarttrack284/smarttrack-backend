@@ -21,6 +21,16 @@ const PLAN_TO_AMOUNT_ENV: Record<
   [SubscriptionPlan.PRO]: 'PAYSTACK_AMOUNT_PRO_PESEWAS',
 };
 
+export type PaystackTransactionSummary = {
+  id: number;
+  reference: string;
+  amountPesewas: number;
+  currency: string;
+  status: string;
+  paidAt: string | null;
+  channel: string | null;
+};
+
 /**
  * The ONLY place the Paystack SDK is imported/used — mirrors the same
  * discipline StripeService had (and EmailProvider/StorageService before
@@ -176,5 +186,49 @@ export class PaystackService {
     const providedBuffer = Buffer.from(signature, 'hex');
     if (expectedBuffer.length !== providedBuffer.length) return false;
     return timingSafeEqual(expectedBuffer, providedBuffer);
+  }
+
+  /**
+   * Lists past transactions for the company's Paystack customer — this IS
+   * the billing history, sourced directly from Paystack rather than a
+   * locally-stored invoice table. Paystack is the system of record for
+   * payment events; mirroring it into our own DB would just be a second
+   * place this data could drift out of sync with what actually happened.
+   */
+  async listTransactionsForCustomer(
+    customerCode: string,
+    input: { page: number; perPage: number },
+  ): Promise<{ transactions: PaystackTransactionSummary[]; total: number }> {
+    const response = await this.client.transaction.list({
+      customer: customerCode,
+      page: input.page,
+      perPage: input.perPage,
+    });
+
+    if (!response.status) {
+      throw new ExternalServiceException(
+        'Paystack',
+        response.message ?? 'Could not load billing history',
+      );
+    }
+
+    const transactions: PaystackTransactionSummary[] = (
+      response.data ?? []
+    ).map((tx: any) => ({
+      id: tx.id,
+      reference: tx.reference,
+      amountPesewas: tx.amount,
+      currency: tx.currency ?? 'GHS',
+      status: tx.status,
+      paidAt: tx.paid_at ?? null,
+      channel: tx.channel ?? null,
+    }));
+
+    return {
+      transactions,
+      // Paystack's list endpoint returns pagination meta under response.meta —
+      // total is what drives the frontend's page-count calculation.
+      total: response.meta?.total ?? transactions.length,
+    };
   }
 }

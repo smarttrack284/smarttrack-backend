@@ -7,6 +7,7 @@ import { SUBSCRIPTION_PLAN_FEATURES } from '#/common/constants/subscription-plan
 import { SubscriptionsService } from '#/modules/subscriptions/subscriptions.service';
 import { UsageService } from '#/modules/usage/usage.service';
 import { UpdateSubscriptionPlanDto } from './dto/update-subscription-plan.dto';
+import { PaystackService } from '#/modules/subscriptions/paystack.service';
 
 /**
  * Matches the frontend's BillingSection exactly: current plan + usage
@@ -23,6 +24,7 @@ export class BillingService {
     @InjectRepository(Usage) private readonly usageRepo: Repository<Usage>,
     private readonly subscriptionsService: SubscriptionsService,
     private readonly usageService: UsageService,
+    private readonly paystackService: PaystackService,
   ) {}
 
   async getBillingOverview(companyId: string) {
@@ -49,5 +51,23 @@ export class BillingService {
       await this.subscriptionsService.getSubscriptionByCompanyId(companyId);
     subscription.plan = dto.plan;
     return this.subscriptionRepo.save(subscription);
+  }
+
+  async getBillingHistory(companyId: string, page: number, pageSize: number) {
+    const subscription =
+      await this.subscriptionsService.getSubscriptionByCompanyId(companyId);
+
+    if (!subscription.paymentCustomerId) {
+      // Never been through checkout — genuinely nothing to show, not an error.
+      return { transactions: [], total: 0, page, pageSize };
+    }
+
+    const { transactions, total } =
+      await this.paystackService.listTransactionsForCustomer(
+        subscription.paymentCustomerId,
+        { page, perPage: pageSize },
+      );
+
+    return { transactions, total, page, pageSize };
   }
 }

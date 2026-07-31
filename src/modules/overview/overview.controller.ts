@@ -35,7 +35,7 @@ export class OverviewController {
   }
 
   @UseGuards(SupabaseAuthGuard, PlanGuard, RolesGuard)
-  @RequirePlan(SubscriptionPlan.STARTER, SubscriptionPlan.PRO)
+  @RequirePlan(SubscriptionPlan.PRO)
   @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
   @Get('advanced/kpis')
   async getAdvancedKpis(@CurrentUser() user: AuthenticatedUser) {
@@ -45,7 +45,7 @@ export class OverviewController {
   }
 
   @UseGuards(SupabaseAuthGuard, PlanGuard, RolesGuard)
-  @RequirePlan(SubscriptionPlan.STARTER, SubscriptionPlan.PRO)
+  @RequirePlan(SubscriptionPlan.PRO)
   @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
   @Get('advanced/activity')
   async getAdvancedActivity(
@@ -61,7 +61,7 @@ export class OverviewController {
   }
 
   @UseGuards(SupabaseAuthGuard, PlanGuard, RolesGuard)
-  @RequirePlan(SubscriptionPlan.STARTER, SubscriptionPlan.PRO)
+  @RequirePlan(SubscriptionPlan.PRO)
   @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
   @Get('advanced/orders')
   async getAdvancedRecentOrders(
