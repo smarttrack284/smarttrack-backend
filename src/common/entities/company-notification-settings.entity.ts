@@ -1,4 +1,11 @@
-import { Column, Entity, Index, JoinColumn, OneToOne, PrimaryGeneratedColumn, } from 'typeorm';
+import {
+  Column,
+  Entity,
+  Index,
+  JoinColumn,
+  OneToOne,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 import { Company } from '#/common/entities/company.entity';
 
 @Entity('companies_notification_settings')
@@ -30,12 +37,23 @@ export class CompanyNotificationSetting {
   })
   customerEmailEnabled: boolean;
 
+  // @Column({
+  //   name: 'customer_sms_enabled',
+  //   type: 'boolean',
+  //   default: false,
+  // })
+  // customerSmsEnabled: boolean;
+
+  /**
+   * Master switch for ALL Team Emails
+   * (Replaces individual joined/suspended/activated switches)
+   */
   @Column({
-    name: 'customer_sms_enabled',
+    name: 'team_email_enabled',
     type: 'boolean',
-    default: false,
+    default: true,
   })
-  customerSmsEnabled: boolean;
+  teamEmailEnabled: boolean;
 
   /**
    * Customer email notifications
@@ -89,90 +107,5 @@ export class CompanyNotificationSetting {
   })
   customerEmailOrderCancelled: boolean;
 
-  /**
-   * Customer SMS notifications
-   */
-  //
-  // @Column({
-  //   name: 'customer_sms_order_created',
-  //   type: 'boolean',
-  //   default: false,
-  // })
-  // customerSmsOrderCreated: boolean;
-  //
-  // @Column({
-  //   name: 'customer_sms_order_assigned',
-  //   type: 'boolean',
-  //   default: false,
-  // })
-  // customerSmsOrderAssigned: boolean;
-  //
-  // @Column({
-  //   name: 'customer_sms_order_picked_up',
-  //   type: 'boolean',
-  //   default: false,
-  // })
-  // customerSmsOrderPickedUp: boolean;
-  //
-  // @Column({
-  //   name: 'customer_sms_order_in_transit',
-  //   type: 'boolean',
-  //   default: false,
-  // })
-  // customerSmsOrderInTransit: boolean;
-  //
-  // @Column({
-  //   name: 'customer_sms_order_delivered',
-  //   type: 'boolean',
-  //   default: false,
-  // })
-  // customerSmsOrderDelivered: boolean;
-  //
-  // @Column({
-  //   name: 'customer_sms_order_failed',
-  //   type: 'boolean',
-  //   default: false,
-  // })
-  // customerSmsOrderFailed: boolean;
-  //
-  // @Column({
-  //   name: 'customer_sms_order_cancelled',
-  //   type: 'boolean',
-  //   default: false,
-  // })
-  // customerSmsOrderCancelled: boolean;
-
-  /**
-   * Company notifications
-   */
-  // @Column({
-  //   name: 'email_team_member_invited',
-  //   type: 'boolean',
-  //   default: true,
-  // })
-  // emailTeamMemberInvited: boolean;
-
-  @Column({
-    name: 'email_team_member_joined',
-    type: 'boolean',
-    default: true,
-  })
-  emailTeamMemberJoined: boolean;
-
-  // /**
-  //  * Operational alerts
-  //  */
-  // @Column({
-  //   name: 'email_failed_orders',
-  //   type: 'boolean',
-  //   default: true,
-  // })
-  // emailFailedOrders: boolean;
-  //
-  // @Column({
-  //   name: 'email_unassigned_orders',
-  //   type: 'boolean',
-  //   default: true,
-  // })
-  // emailUnassignedOrders: boolean;
+  // The individual team properties have been removed.
 }

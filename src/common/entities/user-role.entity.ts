@@ -19,12 +19,10 @@ export class UserRole {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  // ✅ Ensured UNIQUE so a user can only ever have one role record in the entire system
   @Column({ name: 'user_id', type: 'uuid', nullable: true, unique: true })
   @Index()
   userId: string | null;
 
-  // ✅ Ensured UNIQUE so an email can only be associated with one company role system-wide
   @Column({ type: 'varchar', length: 255, unique: true })
   email: string;
 
@@ -36,7 +34,6 @@ export class UserRole {
   @JoinColumn({ name: 'company_id' })
   company: Company;
 
-  // ✅ Clean inverse OneToOne mapping back to notification preferences
   @OneToOne(() => NotificationSetting, (settings) => settings.userRole)
   notificationSettings: NotificationSetting;
 

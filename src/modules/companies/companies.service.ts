@@ -3,10 +3,7 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Company } from '#/common/entities/company.entity';
 import { NotificationSetting } from '#/common/entities/notification-setting.entity';
-import {
-  ResourceConflictException,
-  ResourceNotFoundException,
-} from '#/common/exceptions';
+import { ResourceConflictException, ResourceNotFoundException, } from '#/common/exceptions';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { UsersService } from '#/modules/users/users.service';
@@ -22,15 +19,9 @@ import { CreateApiKeyDto } from './dto/create-api-key.dto';
 import { UpdateSavedLocationDto } from './dto/update-saved-location.dto';
 import { CreateSavedLocationDto } from './dto/create-saved-location.dto';
 import { ApiKey } from '#/common/entities/api-key.entity';
-import {
-  buildApiKeyPreview,
-  generateApiKey,
-} from '#/common/utils/api-key.util';
+import { buildApiKeyPreview, generateApiKey, } from '#/common/utils/api-key.util';
 import { hashApiKey } from '#/common/utils/api-key-hash.util';
-import {
-  SavedLocation,
-  SavedLocationKind,
-} from '#/common/entities/saved-location.entity';
+import { SavedLocation, SavedLocationKind, } from '#/common/entities/saved-location.entity';
 import { ErrorHandlerService } from '#/common/errors/error-handler.service';
 import { randomUUID } from 'crypto';
 import { CompanyNotificationSetting } from '#/common/entities/company-notification-settings.entity';
@@ -46,6 +37,8 @@ export class CompaniesService {
     private readonly apiKeyRepo: Repository<ApiKey>,
     @InjectRepository(SavedLocation)
     private readonly savedLocationRepo: Repository<SavedLocation>,
+    @InjectRepository(CompanyNotificationSetting)
+    private readonly companyNotificationRepo: Repository<CompanyNotificationSetting>,
     private readonly usersService: UsersService,
     private readonly subscriptionsService: SubscriptionsService,
     private readonly usageService: UsageService,
@@ -680,6 +673,22 @@ export class CompaniesService {
         kind: location.kind,
         createdAt: location.createdAt,
       }));
+    } catch (err) {
+      this.errorHandler.handle(err, 'CompaniesService.listSavedLocations');
+    }
+
+  }
+
+  async listNotifications(companyId: string): Promise<CompanyNotificationSetting | null> {
+    try {
+      const companyNotifications = await this.companyNotificationRepo.findOne({
+        where: {
+          companyId,
+        },
+
+      });
+
+     return companyNotifications
     } catch (err) {
       this.errorHandler.handle(err, 'CompaniesService.listSavedLocations');
     }

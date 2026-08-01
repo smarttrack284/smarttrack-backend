@@ -17,6 +17,8 @@ import {
   TEAM_EVENTS,
   TeamInviteMemberEvent,
   TeamMemberAcceptedEvent,
+  TeamMemberActivatedEvent,
+  TeamMemberSuspendedEvent,
 } from '#/common/events/team.events';
 
 @Injectable()
@@ -123,6 +125,19 @@ export class NotificationsService {
   @OnEvent(TEAM_EVENTS.INVITE_MEMBER)
   async handleTeamInviteMember(event: TeamInviteMemberEvent): Promise<void> {
     await this.teamNotificationsService.handleTeamInviteMember(event);
+  }
+  @OnEvent(TEAM_EVENTS.MEMBER_SUSPENDED)
+  async handleTeamMemberSuspended(
+    event: TeamMemberSuspendedEvent,
+  ): Promise<void> {
+    await this.teamNotificationsService.handleTeamMemberSuspended(event);
+  }
+
+  @OnEvent(TEAM_EVENTS.MEMBER_ACTIVATED)
+  async handleTeamMemberActivated(
+    event: TeamMemberActivatedEvent,
+  ): Promise<void> {
+    await this.teamNotificationsService.handleTeamMemberActivated(event);
   }
 
   private async getCompanyNotificationSettings(

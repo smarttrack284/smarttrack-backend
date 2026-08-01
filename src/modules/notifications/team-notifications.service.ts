@@ -1,30 +1,26 @@
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import {Injectable} from '@nestjs/common';
+import {InjectRepository} from '@nestjs/typeorm';
+import {In, Repository} from 'typeorm';
 
-import { MailService } from '#/modules/mail/mail.service';
+import {MailService} from '#/modules/mail/mail.service';
 
-import { NotificationSetting } from '#/common/entities/notification-setting.entity';
+import {NotificationSetting} from '#/common/entities/notification-setting.entity';
 
-import { OrderStatus } from '#/common/constants/order-status.constant';
+import {OrderStatus} from '#/common/constants/order-status.constant';
 
-import {
-  OrderCreatedEvent,
-  OrderStatusChangedEvent,
-} from '#/common/events/order.events';
+import {OrderCreatedEvent, OrderStatusChangedEvent,} from '#/common/events/order.events';
 
-import {
-  TEAM_EMAIL_SETTING_MAP,
-  TEAM_TEMPLATE_MAP,
-} from './notification-mappings';
+import {TEAM_EMAIL_SETTING_MAP, TEAM_TEMPLATE_MAP,} from './notification-mappings';
 
-import { getTeamOrderSubject } from './notificcation-subjects';
+import {getTeamOrderSubject} from './notificcation-subjects';
 import {
   TeamInviteMemberEvent,
   TeamMemberAcceptedEvent,
+  TeamMemberActivatedEvent,
+  TeamMemberSuspendedEvent,
 } from '#/common/events/team.events';
-import { MailTemplate } from '#/modules/mail/interfaces/mail-template.interface';
-import { CompanyNotificationSetting } from '#/common/entities/company-notification-settings.entity';
+import {MailTemplate} from '#/modules/mail/interfaces/mail-template.interface';
+import {CompanyNotificationSetting} from '#/common/entities/company-notification-settings.entity';
 
 type TeamOrderEvent = OrderCreatedEvent | OrderStatusChangedEvent;
 
@@ -66,7 +62,10 @@ export class TeamNotificationsService {
       where: { companyId: event.payload.companyId },
     });
 
-    if (!companySettings || !companySettings.emailTeamMemberJoined) return;
+    // Master switch check
+    if (!companySettings || !companySettings.teamEmailEnabled) {
+      return;
+    }
 
     await Promise.all(
       event.payload.recipients.map((r) =>
@@ -78,6 +77,10 @@ export class TeamNotificationsService {
   async handleTeamInviteMember(event: TeamInviteMemberEvent): Promise<void> {
     const { inviterName, companyName, roleLabel, acceptUrl, inviteEmail } =
       event.payload;
+
+    // Note: Invites generally bypass the master switch so you can actually
+    // onboard people, but if you want to block invites too, you would add
+    // the teamEmailEnabled check here.
     await this.mailService.sendTemplateEmail({
       to: inviteEmail,
       subject: `You've been invited to join ${companyName ?? 'SmartTrack'}`,
@@ -87,6 +90,69 @@ export class TeamNotificationsService {
         inviterName,
         roleLabel,
         acceptUrl,
+      },
+    });
+  }
+
+  /**
+   * Handle notification when a team member is suspended.
+   */
+  async handleTeamMemberSuspended(
+    event: TeamMemberSuspendedEvent,
+  ): Promise<void> {
+    const { companyId, memberEmail, memberName, companyName, suspendedAt } =
+      event.payload;
+
+    const companySettings = await this.companyNotificationRepo.findOne({
+      where: { companyId },
+    });
+
+    // Master switch check
+    if (!companySettings || !companySettings.teamEmailEnabled) {
+      return;
+    }
+
+    // Send notification email to the suspended user informing them of the suspension
+    await this.mailService.sendTemplateEmail({
+      to: memberEmail,
+      subject: `Your access to ${companyName ?? 'SmartTrack'} has been suspended`,
+      templateName: MailTemplate.TEAM_MEMBER_SUSPENDED,
+      context: {
+        companyName: companyName ?? 'SmartTrack',
+        memberName,
+        suspendedAt: suspendedAt.toLocaleString(),
+        year: new Date().getFullYear(),
+      },
+    });
+  }
+
+  /**
+   * Handle notification when a team member is reactivated.
+   */
+  async handleTeamMemberActivated(
+    event: TeamMemberActivatedEvent,
+  ): Promise<void> {
+    const { companyId, memberEmail, memberName, companyName, activatedAt } =
+      event.payload;
+
+    const companySettings = await this.companyNotificationRepo.findOne({
+      where: { companyId },
+    });
+
+    // Master switch check
+    if (!companySettings || !companySettings.teamEmailEnabled) {
+      return;
+    }
+
+    await this.mailService.sendTemplateEmail({
+      to: memberEmail,
+      subject: `Your access to ${companyName ?? 'SmartTrack'} has been restored`,
+      templateName: MailTemplate.TEAM_MEMBER_ACTIVATED,
+      context: {
+        companyName: companyName ?? 'SmartTrack',
+        memberName,
+        activatedAt: activatedAt.toLocaleString(),
+        year: new Date().getFullYear(),
       },
     });
   }

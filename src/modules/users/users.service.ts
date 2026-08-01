@@ -25,537 +25,577 @@ import { randomUUID } from "crypto";
 
 @Injectable()
 export class UsersService {
-    private readonly logger: Logger = new Logger(UsersService.name);
-    constructor(
-        @InjectRepository(UserRole)
-        private readonly userRoleRepo: Repository<UserRole>,
-        @InjectRepository(NotificationSetting)
-        private readonly notificationSettingRepository: Repository<NotificationSetting>,
-        @InjectDataSource() private readonly dataSource: DataSource,
-        @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
-        private readonly storageService: StorageService,
-        private readonly config: ConfigService,
-        private readonly errorHandler: ErrorHandlerService
-    ) {}
+  private readonly logger: Logger = new Logger(UsersService.name);
+  constructor(
+    @InjectRepository(UserRole)
+    private readonly userRoleRepo: Repository<UserRole>,
+    @InjectRepository(NotificationSetting)
+    private readonly notificationSettingRepository: Repository<NotificationSetting>,
+    @InjectDataSource() private readonly dataSource: DataSource,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    private readonly storageService: StorageService,
+    private readonly config: ConfigService,
+    private readonly errorHandler: ErrorHandlerService,
+  ) {}
 
-    /**
-     * Creates a user role assignment for a company.
-     *
-     * Assigns a user to a company with the specified role and membership status.
-     *
-     * @param input - The user role information to create.
-     * @param manager - Optional transaction entity manager.
-     * @returns The newly created user role.
-     *
-     * @throws {ResourceConflictException}
-     * If the user already has a role assigned within the company.
-     */
-    async createUserRole(
-        input: {
-            userId: string;
-            companyId: string;
-            name: string;
-            email: string;
-            status: TeamMemberStatus;
-            invitedAt?: Date | null;
-            joinedAt?: Date | null;
-            role: TeamRoleType;
-        },
-        manager?: EntityManager
-    ): Promise<UserRole> {
-        try {
-            return this.withTransaction(manager, async trx => {
-                const repo = trx.getRepository(UserRole);
+  /**
+   * Creates a user role assignment for a company.
+   *
+   * Assigns a user to a company with the specified role and membership status.
+   *
+   * @param input - The user role information to create.
+   * @param manager - Optional transaction entity manager.
+   * @returns The newly created user role.
+   *
+   * @throws {ResourceConflictException}
+   * If the user already has a role assigned within the company.
+   */
+  async createUserRole(
+    input: {
+      userId: string;
+      companyId: string;
+      name: string;
+      email: string;
+      status: TeamMemberStatus;
+      invitedAt?: Date | null;
+      joinedAt?: Date | null;
+      role: TeamRoleType;
+    },
+    manager?: EntityManager,
+  ): Promise<UserRole> {
+    try {
+      return this.withTransaction(manager, async (trx) => {
+        const repo = trx.getRepository(UserRole);
 
-                const existing = await repo.findOne({
-                    where: {
-                        userId: input.userId,
-                        companyId: input.companyId
-                    }
-                });
+        const existing = await repo.findOne({
+          where: {
+            userId: input.userId,
+            companyId: input.companyId,
+          },
+        });
 
-                if (existing) {
-                    throw new ResourceConflictException(
-                        "This user is already a member of this company."
-                    );
-                }
-
-                const userRole = repo.create(input);
-
-                return await repo.save(userRole);
-            });
-        } catch (err) {
-            this.errorHandler.handle(err, "UsersService.createUserRole");
+        if (existing) {
+          throw new ResourceConflictException(
+            'This user is already a member of this company.',
+          );
         }
+
+        const userRole = repo.create(input);
+
+        return await repo.save(userRole);
+      });
+    } catch (err) {
+      this.errorHandler.handle(err, 'UsersService.createUserRole');
     }
+  }
 
-    /**
-     * Retrieves a user's role within a company.
-     *
-     * @param userId - The user's unique identifier.
-     * @param companyId - The company's unique identifier.
-     * @param manager - Optional transaction entity manager.
-     * @returns The user's role for the specified company.
-     *
-     * @throws {ResourceNotFoundException}
-     * If the user does not have a role in the specified company.
-     */
-    async getUserRole(
-        userId: string,
-        companyId: string,
-        manager?: EntityManager
-    ): Promise<UserRole> {
-        try {
-            const repo = manager
-                ? manager.getRepository(UserRole)
-                : this.userRoleRepo;
+  /**
+   * Retrieves a user's role within a company.
+   *
+   * @param userId - The user's unique identifier.
+   * @param companyId - The company's unique identifier.
+   * @param manager - Optional transaction entity manager.
+   * @returns The user's role for the specified company.
+   *
+   * @throws {ResourceNotFoundException}
+   * If the user does not have a role in the specified company.
+   */
+  async getUserRole(
+    userId: string,
+    companyId: string,
+    manager?: EntityManager,
+  ): Promise<UserRole> {
+    try {
+      const repo = manager
+        ? manager.getRepository(UserRole)
+        : this.userRoleRepo;
 
-            const userRole = await repo.findOne({
-                where: { userId, companyId }
-            });
+      const userRole = await repo.findOne({
+        where: { userId, companyId },
+      });
 
-            if (!userRole) {
-                throw new ResourceNotFoundException(
-                    "The user does not have access to this company."
-                );
-            }
+      if (!userRole) {
+        throw new ResourceNotFoundException(
+          'The user does not have access to this company.',
+        );
+      }
 
-            return userRole;
-        } catch (err) {
-            this.errorHandler.handle(err, "UsersService.getUserRole");
-        }
+      return userRole;
+    } catch (err) {
+      this.errorHandler.handle(err, 'UsersService.getUserRole');
     }
+  }
 
-    /**
-     * Retrieves a user from Supabase Auth.
-     *
-     * @param userId - The unique identifier of the user.
-     * @returns The authenticated user.
-     *
-     * @throws {ResourceNotFoundException}
-     * If the user could not be found.
-     */
-    async getUserFromSupabase(userId: string): Promise<User> {
-        try {
-            const { data, error } =
-                await this.supabase.auth.admin.getUserById(userId);
+  /**
+   * Retrieves a user from Supabase Auth.
+   *
+   * @param userId - The unique identifier of the user.
+   * @returns The authenticated user.
+   *
+   * @throws {ResourceNotFoundException}
+   * If the user could not be found.
+   */
+  async getUserFromSupabase(userId: string): Promise<User> {
+    try {
+      const { data, error } =
+        await this.supabase.auth.admin.getUserById(userId);
 
-            if (error) {
-                // Log the technical error for developers
-                this.logger.error(
-                    "Failed to retrieve user from Supabase.",
-                    error
-                );
+      if (error) {
+        // Log the technical error for developers
+        this.logger.error('Failed to retrieve user from Supabase.', error);
 
-                throw new InternalErrorException(
-                    "We couldn’t retrieve your account at the moment. Please try again."
-                );
-            }
+        throw new InternalErrorException(
+          'We couldn’t retrieve your account at the moment. Please try again.',
+        );
+      }
 
-            if (!data?.user) {
-                throw new ResourceNotFoundException(
-                    "The requested user could not be found."
-                );
-            }
+      if (!data?.user) {
+        throw new ResourceNotFoundException(
+          'The requested user could not be found.',
+        );
+      }
 
-            return data.user;
-        } catch (err) {
-            this.errorHandler.handle(err, "UsersService.getUserFromSupabase");
-        }
+      return data.user;
+    } catch (err) {
+      this.errorHandler.handle(err, 'UsersService.getUserFromSupabase');
     }
+  }
 
-    /**
-     * Retrieves the role assigned to a user.
-     *
-     * @param userId - The user's unique identifier.
-     * @param manager - Optional transaction entity manager.
-     * @returns The user's assigned role.
-     *
-     * @throws {ResourceNotFoundException}
-     * If the user does not have an assigned role.
-     */
-    async getUserRoleByUserId(
-        userId: string,
-        manager?: EntityManager
-    ): Promise<UserRole> {
-        try {
-            const repo = manager
-                ? manager.getRepository(UserRole)
-                : this.userRoleRepo;
+  /**
+   * Retrieves the role assigned to a user.
+   *
+   * @param userId - The user's unique identifier.
+   * @param manager - Optional transaction entity manager.
+   * @returns The user's assigned role.
+   *
+   * @throws {ResourceNotFoundException}
+   * If the user does not have an assigned role.
+   */
+  async getUserRoleByUserId(
+    userId: string,
+    manager?: EntityManager,
+  ): Promise<UserRole> {
+    try {
+      const repo = manager
+        ? manager.getRepository(UserRole)
+        : this.userRoleRepo;
 
-            const userRole = await repo.findOne({
-                where: { userId }
-            });
+      const userRole = await repo.findOne({
+        where: { userId },
+      });
 
-            if (!userRole) {
-                throw new ResourceNotFoundException(
-                    "No role has been assigned to this user."
-                );
-            }
+      if (!userRole) {
+        throw new ResourceNotFoundException(
+          'No role has been assigned to this user.',
+        );
+      }
 
-            return userRole;
-        } catch (err) {
-            this.errorHandler.handle(err, "UsersService.getUserRoleByUserId");
-        }
+      return userRole;
+    } catch (err) {
+      this.errorHandler.handle(err, 'UsersService.getUserRoleByUserId');
     }
+  }
 
-    /**
-     * Updates a user's profile information.
-     *
-     * Updates profile metadata in Supabase, uploads a new avatar when provided,
-     * stores avatar information including the file extension, and synchronizes
-     * the user's display name with the company membership record.
-     *
-     * @param userId - The unique identifier of the user.
-     * @param companyId - The unique identifier of the company.
-     * @param dto - Profile fields to update.
-     * @param avatarFile - Optional avatar file upload information.
-     *
-     * @returns The updated profile information.
-     */
-    async updateUserProfile(
-        userId: string,
-        companyId: string,
-        dto: UpdateUserProfileDto,
-        avatarFile?: {
-            buffer: Buffer;
-            contentType: string;
-            extension: string;
+  /**
+   * Updates a user's profile information.
+   *
+   * Updates profile metadata in Supabase, uploads a new avatar when provided,
+   * stores avatar information including the file extension, and synchronizes
+   * the user's display name with the company membership record.
+   *
+   * @param userId - The unique identifier of the user.
+   * @param companyId - The unique identifier of the company.
+   * @param dto - Profile fields to update.
+   * @param avatarFile - Optional avatar file upload information.
+   *
+   * @returns The updated profile information.
+   */
+  async updateUserProfile(
+    userId: string,
+    companyId: string,
+    dto: UpdateUserProfileDto,
+    avatarFile?: {
+      buffer: Buffer;
+      contentType: string;
+      extension: string;
+    },
+  ): Promise<{
+    id: string;
+    name: string | null;
+    phone: string | null;
+    avatarUrl: string | null;
+  }> {
+    let newUploadedAvatarPath: string | undefined;
+
+    try {
+      let avatarUrl: string | undefined;
+      let avatarFilename: string | undefined;
+      let oldAvatarPath: string | undefined;
+
+      const supabaseUser = await this.getUserFromSupabase(userId);
+
+      const metadata = supabaseUser.user_metadata as
+        Record<string, unknown> | undefined;
+
+      if (avatarFile) {
+        const existingFilename = metadata?.avatar_filename as
+          string | undefined;
+
+        if (existingFilename) {
+          oldAvatarPath = StoragePath.userAvatar(
+            companyId,
+            userId,
+            existingFilename,
+          );
         }
-    ): Promise<{
-        id: string;
-        name: string | null;
-        phone: string | null;
-        avatarUrl: string | null;
-    }> {
-        let newUploadedAvatarPath: string | undefined;
 
-        try {
-            let avatarUrl: string | undefined;
-            let avatarFilename: string | undefined;
-            let oldAvatarPath: string | undefined;
+        const extension = avatarFile.extension.toLowerCase();
 
-            const supabaseUser = await this.getUserFromSupabase(userId);
+        avatarFilename = `avatar-${randomUUID()}.${extension}`;
 
-            const metadata = supabaseUser.user_metadata as
-                | Record<string, unknown>
-                | undefined;
+        newUploadedAvatarPath = StoragePath.userAvatar(
+          companyId,
+          userId,
+          avatarFilename,
+        );
 
-            if (avatarFile) {
-                const existingFilename = metadata?.avatar_filename as
-                    | string
-                    | undefined;
+        avatarUrl = await this.storageService.uploadFile({
+          path: newUploadedAvatarPath,
+          buffer: avatarFile.buffer,
+          contentType: avatarFile.contentType,
+        });
+      }
 
-                if (existingFilename) {
-                    oldAvatarPath = StoragePath.userAvatar(
-                        companyId,
-                        userId,
-                        existingFilename
-                    );
-                }
+      const metadataUpdate: Record<string, unknown> = {};
 
-                const extension = avatarFile.extension.toLowerCase();
+      if (dto.name !== undefined) {
+        metadataUpdate.full_name = dto.name;
+      }
 
-                avatarFilename = `avatar-${randomUUID()}.${extension}`;
+      if (dto.phone !== undefined) {
+        metadataUpdate.phone = dto.phone;
+      }
 
-                newUploadedAvatarPath = StoragePath.userAvatar(
-                    companyId,
-                    userId,
-                    avatarFilename
-                );
+      if (avatarUrl) {
+        metadataUpdate.avatar_url = avatarUrl;
+        metadataUpdate.avatar_filename = avatarFilename;
+      }
 
-                avatarUrl = await this.storageService.uploadFile({
-                    path: newUploadedAvatarPath,
-                    buffer: avatarFile.buffer,
-                    contentType: avatarFile.contentType
-                });
-            }
+      let updatedUser = supabaseUser;
 
-            const metadataUpdate: Record<string, unknown> = {};
+      if (Object.keys(metadataUpdate).length > 0) {
+        const { data, error } = await this.supabase.auth.admin.updateUserById(
+          userId,
+          {
+            user_metadata: metadataUpdate,
+          },
+        );
 
-            if (dto.name !== undefined) {
-                metadataUpdate.full_name = dto.name;
-            }
-
-            if (dto.phone !== undefined) {
-                metadataUpdate.phone = dto.phone;
-            }
-
-            if (avatarUrl) {
-                metadataUpdate.avatar_url = avatarUrl;
-                metadataUpdate.avatar_filename = avatarFilename;
-            }
-
-            let updatedUser = supabaseUser;
-
-            if (Object.keys(metadataUpdate).length > 0) {
-                const { data, error } =
-                    await this.supabase.auth.admin.updateUserById(userId, {
-                        user_metadata: metadataUpdate
-                    });
-
-                if (error || !data?.user) {
-                    throw new ExternalServiceException(
-                        "We couldn't update your profile at the moment. Please try again."
-                    );
-                }
-
-                updatedUser = data.user;
-            }
-
-            if (dto.name !== undefined) {
-                await this.userRoleRepo.update({ userId }, { name: dto.name });
-            }
-
-            if (oldAvatarPath) {
-                await this.storageService
-                    .deleteFile(oldAvatarPath)
-                    .catch(err => {
-                        this.logger.error(
-                            `Failed deleting old avatar: ${oldAvatarPath}`,
-                            err
-                        );
-                    });
-            }
-
-            const updatedMetadata = updatedUser.user_metadata as Record<
-                string,
-                unknown
-            >;
-
-            return {
-                id: updatedUser.id,
-                name: (updatedMetadata.full_name as string) ?? null,
-                phone: (updatedMetadata.phone as string) ?? null,
-                avatarUrl: (updatedMetadata.avatar_url as string) ?? null
-            };
-        } catch (err) {
-            if (newUploadedAvatarPath) {
-                await this.storageService
-                    .deleteFile(newUploadedAvatarPath)
-                    .catch(cleanupErr =>
-                        this.logger.error(
-                            `Failed cleaning uploaded avatar: ${newUploadedAvatarPath}`,
-                            cleanupErr
-                        )
-                    );
-            }
-
-            this.errorHandler.handle(err, "UsersService.updateUserProfile");
+        if (error || !data?.user) {
+          throw new ExternalServiceException(
+            "We couldn't update your profile at the moment. Please try again.",
+          );
         }
-    }
 
-    /**
-     * Updates a user's password.
-     *
-     * Verifies the user's current password before updating it to a new password
-     * in Supabase Auth.
-     *
-     * @param userId - The unique identifier of the user.
-     * @param email - The user's email address.
-     * @param dto - The password update request.
-     *
-     * @throws {ForbiddenAppException}
-     * If the current password provided is incorrect.
-     *
-     * @throws {ExternalServiceException}
-     * If the password could not be updated.
-     */
-    async updatePassword(
-        userId: string,
-        email: string,
-        dto: UpdatePasswordDto
-    ): Promise<void> {
-        try {
-            const { createClient } = await import("@supabase/supabase-js");
+        updatedUser = data.user;
+      }
 
-            const verifyClient = createClient(
-                this.config.get<string>("SUPABASE_URL")!,
-                this.config.get<string>("SUPABASE_PUBLISHABLE_KEY")!
-            );
+      if (dto.name !== undefined) {
+        await this.userRoleRepo.update({ userId }, { name: dto.name });
+      }
 
-            const { error: signInError } =
-                await verifyClient.auth.signInWithPassword({
-                    email,
-                    password: dto.currentPassword
-                });
+      if (oldAvatarPath) {
+        await this.storageService.deleteFile(oldAvatarPath).catch((err) => {
+          this.logger.error(
+            `Failed deleting old avatar: ${oldAvatarPath}`,
+            err,
+          );
+        });
+      }
 
-            if (signInError) {
-                throw new ForbiddenAppException(
-                    "Your current password is incorrect."
-                );
-            }
+      const updatedMetadata = updatedUser.user_metadata as Record<
+        string,
+        unknown
+      >;
 
-            const { error } = await this.supabase.auth.admin.updateUserById(
-                userId,
-                {
-                    password: dto.newPassword
-                }
-            );
-
-            if (error) {
-                this.logger.error(
-                    `Failed to update password for user ${userId}.`,
-                    error
-                );
-
-                throw new ExternalServiceException(
-                    "Password",
-                    "We couldn't update your password at the moment. Please try again."
-                );
-            }
-        } catch (err) {
-            this.errorHandler.handle(err, "UsersService.updatePassword");
-        }
-    }
-
-    /**
-     * Permanently deletes a user from Supabase Auth.
-     *
-     * @param userId - The unique identifier of the user to delete.
-     *
-     * @throws {ExternalServiceException}
-     * If the user account could not be deleted.
-     */
-    async deleteSupabaseUser(userId: string): Promise<void> {
-        const { error } = await this.supabase.auth.admin.deleteUser(userId);
-
-        if (error) {
+      return {
+        id: updatedUser.id,
+        name: (updatedMetadata.full_name as string) ?? null,
+        phone: (updatedMetadata.phone as string) ?? null,
+        avatarUrl: (updatedMetadata.avatar_url as string) ?? null,
+      };
+    } catch (err) {
+      if (newUploadedAvatarPath) {
+        await this.storageService
+          .deleteFile(newUploadedAvatarPath)
+          .catch((cleanupErr) =>
             this.logger.error(
-                `Failed to delete user ${userId} from Supabase Auth.`,
-                error
-            );
+              `Failed cleaning uploaded avatar: ${newUploadedAvatarPath}`,
+              cleanupErr,
+            ),
+          );
+      }
 
-            throw new ExternalServiceException(
-                "We couldn't delete the user account at the moment. Please try again."
-            );
+      this.errorHandler.handle(err, 'UsersService.updateUserProfile');
+    }
+  }
+
+  /**
+   * Updates a user's password.
+   *
+   * Verifies the user's current password before updating it to a new password
+   * in Supabase Auth.
+   *
+   * @param userId - The unique identifier of the user.
+   * @param email - The user's email address.
+   * @param dto - The password update request.
+   *
+   * @throws {ForbiddenAppException}
+   * If the current password provided is incorrect.
+   *
+   * @throws {ExternalServiceException}
+   * If the password could not be updated.
+   */
+  async updatePassword(
+    userId: string,
+    email: string,
+    dto: UpdatePasswordDto,
+  ): Promise<void> {
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+
+      const verifyClient = createClient(
+        this.config.get<string>('SUPABASE_URL')!,
+        this.config.get<string>('SUPABASE_PUBLISHABLE_KEY')!,
+      );
+
+      const { error: signInError } = await verifyClient.auth.signInWithPassword(
+        {
+          email,
+          password: dto.currentPassword,
+        },
+      );
+
+      if (signInError) {
+        throw new ForbiddenAppException('Your current password is incorrect.');
+      }
+
+      const { error } = await this.supabase.auth.admin.updateUserById(userId, {
+        password: dto.newPassword,
+      });
+
+      if (error) {
+        this.logger.error(
+          `Failed to update password for user ${userId}.`,
+          error,
+        );
+
+        throw new ExternalServiceException(
+          'Password',
+          "We couldn't update your password at the moment. Please try again.",
+        );
+      }
+    } catch (err) {
+      this.errorHandler.handle(err, 'UsersService.updatePassword');
+    }
+  }
+
+  /**
+   * Permanently deletes a user from Supabase Auth.
+   *
+   * @param userId - The unique identifier of the user to delete.
+   *
+   * @throws {ExternalServiceException}
+   * If the user account could not be deleted.
+   */
+  async deleteSupabaseUser(userId: string): Promise<void> {
+    const { error } = await this.supabase.auth.admin.deleteUser(userId);
+
+    if (error) {
+      this.logger.error(
+        `Failed to delete user ${userId} from Supabase Auth.`,
+        error,
+      );
+
+      throw new ExternalServiceException(
+        "We couldn't delete the user account at the moment. Please try again.",
+      );
+    }
+  }
+
+  /**
+   * Suspends a user in Supabase Auth, preventing them from logging in.
+   *
+   * @param userId - The unique identifier of the user to ban.
+   * @param duration - The duration of the ban (defaults to '876000h', effectively a permanent ban).
+   *
+   * @throws {ExternalServiceException}
+   * If the user account could not be suspended.
+   */
+  async banSupabaseUser(
+    userId: string,
+    duration: string = '876000h',
+  ): Promise<void> {
+    const { error } = await this.supabase.auth.admin.updateUserById(userId, {
+      ban_duration: duration,
+    });
+
+    if (error) {
+      this.logger.error(
+        `Failed to ban user ${userId} in Supabase Auth.`,
+        error,
+      );
+
+      throw new ExternalServiceException(
+        "We couldn't suspend the user's login access at the moment. Please try again.",
+      );
+    }
+  }
+
+  /**
+   * Removes a suspension from a user in Supabase Auth, allowing them to log in again.
+   *
+   * @param userId - The unique identifier of the user to unban.
+   *
+   * @throws {ExternalServiceException}
+   * If the user account could not be reactivated.
+   */
+  async unbanSupabaseUser(userId: string): Promise<void> {
+    // Setting ban_duration to "none" unbans the user in Supabase
+    const { error } = await this.supabase.auth.admin.updateUserById(userId, {
+      ban_duration: 'none',
+    });
+
+    if (error) {
+      this.logger.error(
+        `Failed to unban user ${userId} in Supabase Auth.`,
+        error,
+      );
+
+      throw new ExternalServiceException(
+        "We couldn't restore the user's login access at the moment. Please try again.",
+      );
+    }
+  }
+
+  /**
+   * Retrieves a user's notification settings.
+   *
+   * @param userId - The unique identifier of the user.
+   * @returns The user's notification settings.
+   *
+   * @throws {ResourceNotFoundException}
+   * If the user's notification settings could not be found.
+   */
+  async getNotificationSettings(userId: string): Promise<{
+    emailOrderCreated: boolean;
+    emailOrderAssigned: boolean;
+    emailOrderPickedUp: boolean;
+    emailOrderDelivered: boolean;
+    emailOrderFailed: boolean;
+    emailOrderCancelled: boolean;
+  }> {
+    try {
+      const notificationSetting =
+        await this.notificationSettingRepository.findOne({
+          where: { userId },
+          select: {
+            emailOrderCreated: true,
+            emailOrderAssigned: true,
+            emailOrderPickedUp: true,
+            emailOrderDelivered: true,
+            emailOrderFailed: true,
+            emailOrderCancelled: true,
+          },
+        });
+
+      if (!notificationSetting) {
+        throw new ResourceNotFoundException(
+          'Notification settings could not be found.',
+        );
+      }
+
+      return notificationSetting;
+    } catch (err) {
+      this.errorHandler.handle(err, 'UsersService.getNotificationSettings');
+    }
+  }
+
+  /**
+   * Updates a user's notification settings.
+   *
+   * @param userId - The unique identifier of the user.
+   * @param dto - The notification settings to update.
+   * @returns The updated notification settings.
+   *
+   * @throws {ResourceNotFoundException}
+   * If the user's notification settings could not be found.
+   */
+  async updateNotificationSettings(
+    userId: string,
+    dto: UpdateNotificationSettingsDto,
+  ) {
+    try {
+      return this.withTransaction(undefined, async (trx) => {
+        const repo = trx.getRepository(NotificationSetting);
+
+        const notificationSetting = await repo.findOne({
+          where: { userId },
+        });
+
+        if (!notificationSetting) {
+          throw new ResourceNotFoundException(
+            'Notification settings could not be found.',
+          );
         }
+
+        // Update the notification settings.
+        await repo.update({ userId }, dto);
+
+        // Return the updated notification settings.
+        return repo.findOne({
+          where: { userId },
+          select: {
+            emailOrderCreated: true,
+            emailOrderAssigned: true,
+            emailOrderPickedUp: true,
+            emailOrderDelivered: true,
+            emailOrderCancelled: true,
+            emailOrderFailed: true,
+          },
+        });
+      });
+    } catch (err) {
+      this.errorHandler.handle(err, 'UsersService.updateNotificationSettings');
+    }
+  }
+
+  /**
+   * Same pattern as CompaniesService.withTransaction — participates in an
+   * already-open transaction if `manager` is passed (e.g. from
+   * CompaniesService.createCompany, so a company and its owner's role are
+   * created atomically), otherwise owns its own QueryRunner lifecycle.
+   */
+  private async withTransaction<T>(
+    manager: EntityManager | undefined,
+    work: (manager: EntityManager) => Promise<T>,
+  ): Promise<T> {
+    if (manager) {
+      return work(manager);
     }
 
-    /**
-     * Retrieves a user's notification settings.
-     *
-     * @param userId - The unique identifier of the user.
-     * @returns The user's notification settings.
-     *
-     * @throws {ResourceNotFoundException}
-     * If the user's notification settings could not be found.
-     */
-    async getNotificationSettings(userId: string): Promise<{
-        emailOrderCreated: boolean;
-        emailOrderAssigned: boolean;
-        emailOrderPickedUp: boolean;
-        emailOrderDelivered: boolean;
-        emailOrderFailed: boolean;
-        emailOrderCancelled: boolean;
-    }> {
-        try {
-            const notificationSetting =
-                await this.notificationSettingRepository.findOne({
-                    where: { userId },
-                    select: {
-                        emailOrderCreated: true,
-                        emailOrderAssigned: true,
-                        emailOrderPickedUp: true,
-                        emailOrderDelivered: true,
-                        emailOrderFailed: true,
-                        emailOrderCancelled: true
-                    }
-                });
-
-            if (!notificationSetting) {
-                throw new ResourceNotFoundException(
-                    "Notification settings could not be found."
-                );
-            }
-
-            return notificationSetting;
-        } catch (err) {
-            this.errorHandler.handle(
-                err,
-                "UsersService.getNotificationSettings"
-            );
-        }
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    try {
+      const result = await work(queryRunner.manager);
+      await queryRunner.commitTransaction();
+      return result;
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
     }
-
-    /**
-     * Updates a user's notification settings.
-     *
-     * @param userId - The unique identifier of the user.
-     * @param dto - The notification settings to update.
-     * @returns The updated notification settings.
-     *
-     * @throws {ResourceNotFoundException}
-     * If the user's notification settings could not be found.
-     */
-    async updateNotificationSettings(
-        userId: string,
-        dto: UpdateNotificationSettingsDto
-    ) {
-        try {
-            return this.withTransaction(undefined, async trx => {
-                const repo = trx.getRepository(NotificationSetting);
-
-                const notificationSetting = await repo.findOne({
-                    where: { userId }
-                });
-
-                if (!notificationSetting) {
-                    throw new ResourceNotFoundException(
-                        "Notification settings could not be found."
-                    );
-                }
-
-                // Update the notification settings.
-                await repo.update({ userId }, dto);
-
-                // Return the updated notification settings.
-                return repo.findOne({
-                    where: { userId },
-                    select: {
-                        emailOrderCreated: true,
-                        emailOrderAssigned: true,
-                        emailOrderPickedUp: true,
-                        emailOrderDelivered: true,
-                        emailOrderCancelled: true,
-                        emailOrderFailed: true
-                    }
-                });
-            });
-        } catch (err) {
-            this.errorHandler.handle(
-                err,
-                "UsersService.updateNotificationSettings"
-            );
-        }
-    }
-
-    /**
-     * Same pattern as CompaniesService.withTransaction — participates in an
-     * already-open transaction if `manager` is passed (e.g. from
-     * CompaniesService.createCompany, so a company and its owner's role are
-     * created atomically), otherwise owns its own QueryRunner lifecycle.
-     */
-    private async withTransaction<T>(
-        manager: EntityManager | undefined,
-        work: (manager: EntityManager) => Promise<T>
-    ): Promise<T> {
-        if (manager) {
-            return work(manager);
-        }
-
-        const queryRunner = this.dataSource.createQueryRunner();
-        await queryRunner.connect();
-        await queryRunner.startTransaction();
-        try {
-            const result = await work(queryRunner.manager);
-            await queryRunner.commitTransaction();
-            return result;
-        } catch (err) {
-            await queryRunner.rollbackTransaction();
-            throw err;
-        } finally {
-            await queryRunner.release();
-        }
-    }
+  }
 }
