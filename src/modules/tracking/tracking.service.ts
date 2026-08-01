@@ -656,14 +656,6 @@ export class TrackingService {
                 source: trip.etaSource,
                 calculatedAt: trip.etaCalculatedAt
             },
-            // driverLocation: trip.driverLocationLat
-            //                 ? {
-            //                       lat: trip.driverLocationLat,
-            //                       lng: trip.driverLocationLng,
-            //                       accuracyMeters: trip.driverLocationAccuracy,
-            //                       updatedAt: trip.driverLocationUpdatedAt
-            //                   }
-            //                 : null,
             driverLocation: trip.driverLocationLat
                 ? {
                       lat: trip.driverLocationLat,

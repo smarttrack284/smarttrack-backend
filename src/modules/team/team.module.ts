@@ -9,20 +9,14 @@ import { TeamExternalController } from "./team-external.controller";
 import { MailModule } from "#/modules/mail/mail.module";
 import { SupabaseModule } from "#/common/supabase/supabase.module";
 import { TripStop } from "#/common/entities/trip-stop.entity";
-import { NotificationSetting } from "#/common/entities/notification-setting.entity";
+// import { NotificationSetting } from "#/common/entities/notification-setting.entity";
 import { Company } from "#/common/entities/company.entity";
 import { ApiKey } from "#/common/entities/api-key.entity";
 import { PresenceModule } from "#/modules/presence/presence.module";
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([
-            UserRole,
-            TripStop,
-            NotificationSetting,
-            Company,
-            ApiKey
-        ]),
+        TypeOrmModule.forFeature([UserRole, TripStop, Company, ApiKey]),
         UsageModule,
         UsersModule,
         MailModule,
