@@ -46,6 +46,7 @@ import {
     TripDriver
 } from "#/modules/dispatch/dispatch.service";
 import { ErrorHandlerService } from "#/common/errors/error-handler.service";
+import { driverPresenceService } from "#/modules/presence/driver-presence.service";
 
 export type LocationUpdateResult =
     | { accepted: true }
@@ -73,7 +74,8 @@ export class TrackingService {
         private readonly dispatchService: DispatchService,
         @InjectQueue(TRACKING_QUEUE_NAME) private readonly trackingQueue: Queue,
         private readonly events: EventEmitter2,
-        private readonly errorHandler: ErrorHandlerService
+        private readonly errorHandler: ErrorHandlerService,
+        private readonly driverPresenceService: DriverPresenceService
     ) {}
 
     /**
@@ -582,10 +584,15 @@ export class TrackingService {
                 ])
             ).get(trip.driverUserId);
 
+            const isOnline = await this.driverPresenceService.isOnline(
+                trip.companyId,
+                trip.driverUserId
+            );
+
             this.emitter.emitToInternalRoom(
                 tripId,
                 "trip:update",
-                this.toInternalPayload(trip, driver)
+                this.toInternalPayload(trip, driver, isOnline)
             );
 
             for (const stop of trip.stops) {
@@ -618,7 +625,11 @@ export class TrackingService {
         }
     }
 
-    toInternalPayload(trip: Trip, driver: TripDriver | null) {
+    toInternalPayload(
+        trip: Trip,
+        driver: TripDriver | null,
+        isOnline: boolean
+    ) {
         const mappedStops = trip.stops.map(stop => ({
             id: stop.id,
             sequence: stop.sequence,
@@ -634,7 +645,7 @@ export class TrackingService {
             status: stop.status,
             arrivedAt: stop.arrivedAt,
             completedAt: stop.completedAt,
-            skiReason: stop.skipReason,
+            skipReason: stop.skipReason,
             skipNote: stop.skipNote
         }));
 
@@ -647,7 +658,12 @@ export class TrackingService {
 
         return {
             id: trip.id,
-            driver,
+            driver: driver
+                ? {
+                      ...driver,
+                      isOnline
+                  }
+                : null,
             status: deriveTripStatus(trip.stops),
             progress: getTripProgress(trip.stops),
             currentStop,
@@ -660,17 +676,12 @@ export class TrackingService {
                 ? {
                       lat: trip.driverLocationLat,
                       lng: trip.driverLocationLng,
-
                       accuracyMeters: trip.driverLocationAccuracy,
-
                       gpsQuality: this.getGpsQuality(
                           trip.driverLocationAccuracy
                       ),
-
                       speedKph: trip.driverSpeedKph,
-
                       heading: trip.driverHeading,
-
                       updatedAt: trip.driverLocationUpdatedAt
                   }
                 : null,
@@ -800,7 +811,7 @@ export class TrackingService {
         clientTimestamp: Date,
         clearCandidate: boolean,
         heading: number | null,
-        speedKph: number 
+        speedKph: number
     ): Promise<void> {
         await this.tripRepo.update(
             { id: tripId },
