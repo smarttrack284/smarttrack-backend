@@ -1,9 +1,15 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
-import { DataSource, EntityManager, Repository } from "typeorm";
+import {
+    DataSource,
+    EntityManager,
+    Repository,
+    QueryFailedError
+} from "typeorm";
 import { Company } from "#/common/entities/company.entity";
 // import { NotificationSetting } from "#/common/entities/notification-setting.entity";
 import {
+  InternalErrorException,
     ResourceConflictException,
     ResourceNotFoundException
 } from "#/common/exceptions";
@@ -31,7 +37,10 @@ import {
     SavedLocation,
     SavedLocationKind
 } from "#/common/entities/saved-location.entity";
-import { ErrorHandlerService } from "#/common/errors/error-handler.service";
+import {
+    ErrorHandlerService,
+    rule
+} from "#/common/errors/error-handler.service";
 import { randomUUID } from "crypto";
 import { CompanyNotificationSetting } from "#/common/entities/company-notification-settings.entity";
 import { UpdateCompanyNotificationDto } from "./dto/update-company-notification.dto";
@@ -81,6 +90,15 @@ export class CompaniesService {
             const supabaseUser =
                 await this.usersService.getUserFromSupabase(ownerUserId);
 
+            // Defensive: if the JWT subject refers to a deleted/ghost user,
+            // fail fast with a clear log instead of "Cannot read property
+            // 'email' of null".
+            if (!supabaseUser) {
+                throw new Error(
+                    `Supabase user ${ownerUserId} not found during company creation`
+                );
+            }
+
             const ownerName =
                 ((supabaseUser.user_metadata as Record<string, unknown> | null)
                     ?.full_name as string | undefined) ??
@@ -90,7 +108,9 @@ export class CompaniesService {
             return this.withTransaction(manager, async trx => {
                 const companyRepo = trx.getRepository(Company);
 
-                // Check if a company with the same email already exists.
+                // Optimistic check for fast UX feedback. The real enforcement
+                // is the DB unique constraint, handled in the catch block to
+                // close the race-condition window between findOne and save.
                 const existing = await companyRepo.findOne({
                     where: { email: dto.email }
                 });
@@ -101,7 +121,6 @@ export class CompaniesService {
                     );
                 }
 
-                // Create and save the company.
                 const company = companyRepo.create({
                     name: dto.name,
                     email: dto.email,
@@ -110,7 +129,6 @@ export class CompaniesService {
 
                 const saved = await companyRepo.save(company);
 
-                // Provision default subscription and usage tracking.
                 await this.subscriptionsService.createSubscription(
                     saved.id,
                     SubscriptionPlan.FREE,
@@ -119,7 +137,6 @@ export class CompaniesService {
 
                 await this.usageService.createUsage(saved.id, 1, trx);
 
-                // Assign the creator as the company owner.
                 await this.usersService.createUserRole(
                     {
                         userId: ownerUserId,
@@ -133,7 +150,6 @@ export class CompaniesService {
                     trx
                 );
 
-                // Create default notification settings for the company.
                 const companyNotificationSetting = trx
                     .getRepository(CompanyNotificationSetting)
                     .create({
@@ -147,7 +163,38 @@ export class CompaniesService {
                 return this.standardCompanyData(saved);
             });
         } catch (error) {
-            this.errorHandler.handle(error, "CompaniesService.createCompany");
+            this.errorHandler.handle(error, "CompaniesService.createCompany", [
+                rule(QueryFailedError, e => {
+                    // Postgres unique-violation is code 23505.
+                    // We only translate the company-email conflict into a
+                    // 409; every other constraint violation (FK failure,
+                    // unexpected unique index, etc.) is an internal bug.
+                    const pgError = (
+                        e as unknown as {
+                            driverError?: {
+                                code?: string;
+                                constraint?: string;
+                                detail?: string;
+                            };
+                        }
+                    ).driverError;
+
+                    const isUniqueViolation = pgError?.code === "23505";
+                    const isEmailConstraint =
+                        pgError?.constraint?.toLowerCase().includes("email") ||
+                        pgError?.detail?.toLowerCase().includes("email");
+
+                    if (isUniqueViolation && isEmailConstraint) {
+                        return new ResourceConflictException(
+                            "A company with this email address already exists."
+                        );
+                    }
+
+                    return new InternalErrorException(
+                        "Database operation failed."
+                    );
+                })
+            ]);
         }
     }
 
