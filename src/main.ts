@@ -1,6 +1,9 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { FastifyAdapter, NestFastifyApplication, } from '@nestjs/platform-fastify';
+import {
+  FastifyAdapter,
+  NestFastifyApplication,
+} from '@nestjs/platform-fastify';
 import helmet from '@fastify/helmet';
 import compress from '@fastify/compress';
 import cookie from '@fastify/cookie';
@@ -17,7 +20,6 @@ async function bootstrap() {
     new FastifyAdapter({
       logger: true,
     }),
-    {rawBody:true}
   );
 
   // Security headers
