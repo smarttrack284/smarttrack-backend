@@ -3,12 +3,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { RedisThrottlerStorage } from './redis-throttler-storage.service';
 
-/**
- * @Global + registered once in AppModule. Sets the app-wide default limit
- * (overridable per-route with @Throttle, exactly as TrackingController
- * already does) and swaps in Redis storage so the limit is enforced
- * consistently across however many server instances are running.
- */
 @Global()
 @Module({
   imports: [
@@ -16,7 +10,12 @@ import { RedisThrottlerStorage } from './redis-throttler-storage.service';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        throttlers: [{ ttl: 60_000, limit: 100 }],
+        throttlers: [
+          // Default limiter (applied when no @Throttle() decorator is used)
+          { ttl: 60_000, limit: 100 },
+          // Named limiter for external API endpoints
+          { name: 'api', ttl: 60_000, limit: 100 },
+        ],
         storage: new RedisThrottlerStorage(config),
       }),
     }),

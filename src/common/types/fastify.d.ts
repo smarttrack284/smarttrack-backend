@@ -9,7 +9,6 @@ declare module "fastify" {
     interface FastifyRequest {
         user?: AuthenticatedUser;
         apiKeyCompanyId?: string;
-        userRole?: { role: string; companyId: string };
         subscription?: {
             plan: string;
             status: string;

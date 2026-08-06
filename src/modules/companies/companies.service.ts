@@ -9,7 +9,7 @@ import {
 import { Company } from "#/common/entities/company.entity";
 // import { NotificationSetting } from "#/common/entities/notification-setting.entity";
 import {
-  InternalErrorException,
+    InternalErrorException,
     ResourceConflictException,
     ResourceNotFoundException
 } from "#/common/exceptions";
@@ -191,7 +191,7 @@ export class CompaniesService {
                     }
 
                     return new InternalErrorException(
-                        "Database operation failed."
+                        "Something went wrong. Please try again later."
                     );
                 })
             ]);
@@ -227,7 +227,20 @@ export class CompaniesService {
 
             return company;
         } catch (err) {
-            this.errorHandler.handle(err, "CompaniesService.getCompanyById");
+            this.errorHandler.handle(err, "CompaniesService.getCompanyById", [
+                rule(QueryFailedError, e => {
+                    // connection terminated unexpectedly, etc.
+                    if (e.message.includes("Connection terminated")) {
+                        return new InternalErrorException(
+                            "The service is temporarily unavailable. Please try again shortly."
+                        );
+                    }
+                    // fallback: still safe
+                    return new InternalErrorException(
+                        "An unexpected error occurred. Please try again later."
+                    );
+                })
+            ]);
         }
     }
 
@@ -369,6 +382,7 @@ export class CompaniesService {
                 return this.standardCompanyData(saved);
             });
         } catch (err) {
+            // Cleanup first – never swallow the original error.
             if (newUploadedLogoPath) {
                 await this.storageService
                     .deleteFile(newUploadedLogoPath)
@@ -380,7 +394,44 @@ export class CompaniesService {
                     );
             }
 
-            this.errorHandler.handle(err, "CompaniesService.updateCompany");
+            this.errorHandler.handle(err, "CompaniesService.updateCompany", [
+                // Map known database constraint violations (beyond the manual
+                // email check) to a generic conflict message that doesn't
+                // reveal which column caused the problem.
+                rule(QueryFailedError, e => {
+                    const pg = (e as any).driverError;
+                    if (pg?.code === "23505") {
+                        return new ResourceConflictException(
+                            "This change conflicts with an existing company record."
+                        );
+                    }
+                    // Not a unique violation – let the generic handler deal with it.
+                    return new InternalErrorException(
+                        "An unexpected error occurred. Please try again later."
+                    );
+                }),
+
+                // Handle storage service errors gracefully. If your storage
+                // service throws a custom error class, use that here; otherwise
+                // catch a broad Error type but only if the message indicates a
+                // file operation failure. This keeps the response friendly while
+                // still logging the real error.
+                rule(Error, e => {
+                    if (
+                        e.message.includes("Storage") ||
+                        e.message.includes("upload") ||
+                        e.message.includes("file")
+                    ) {
+                        return new InternalErrorException(
+                            "Unable to process the uploaded file. Please try again."
+                        );
+                    }
+                    // Let other unknown errors fall through to the generic handler.
+                    return new InternalErrorException(
+                        "An unexpected error occurred. Please try again later."
+                    );
+                })
+            ]);
         }
     }
 
@@ -411,7 +462,6 @@ export class CompaniesService {
                     const company = await repo.findOne({
                         where: { id: companyId }
                     });
-
                     if (!company) {
                         throw new ResourceNotFoundException(
                             "The company you are trying to delete could not be found."
@@ -427,24 +477,70 @@ export class CompaniesService {
                         .map(m => m.userId)
                         .filter((id): id is string => !!id);
 
-                    // Database cascade rules handle removal of related records:
-                    // UserRole, NotificationSetting, SavedLocation, ApiKey,
-                    // Order, and Trip records.
+                    // Cascade rules handle related records.
                     await repo.remove(company);
 
                     return userIds;
                 }
             );
 
+            // Storage cleanup – best effort is acceptable, but we want a safe
+            // message if it fails rather than a stack trace.
             await this.storageService.deleteFolder(
                 StoragePath.companyRoot(companyId)
             );
 
+            // User cleanup – again, if one fails we want a descriptive but
+            // non‑revealing error, not a raw HTTP error from Supabase.
             for (const userId of affectedUserIds) {
                 await this.usersService.deleteSupabaseUser(userId);
             }
         } catch (err) {
-            this.errorHandler.handle(err, "CompaniesService.deleteCompany");
+            this.errorHandler.handle(err, "CompaniesService.deleteCompany", [
+                // 1. Data‑related errors during the transaction
+                rule(
+                    QueryFailedError,
+                    () =>
+                        new InternalErrorException(
+                            "Could not complete the deletion due to a data conflict."
+                        )
+                ),
+
+                // 2. Storage cleanup failures – the company is already gone,
+                //    but files may be orphaned.
+                rule(Error, e => {
+                    if (
+                        e.message.includes("Storage") ||
+                        e.message.includes("folder") ||
+                        e.message.includes("file") ||
+                        e.message.includes("delete")
+                    ) {
+                        return new InternalErrorException(
+                            "Company removed, but some files could not be cleaned up immediately. Our team has been notified."
+                        );
+                    }
+                    return new InternalErrorException(
+                        "An unexpected error occurred. Please try again later."
+                    );
+                }),
+
+                // 3. Supabase user deletion errors – also a best‑effort step
+                rule(Error, e => {
+                    if (
+                        e.message.includes("Supabase") ||
+                        e.message.includes("user") ||
+                        e.message.includes("delete") ||
+                        e.message.includes("account")
+                    ) {
+                        return new InternalErrorException(
+                            "Company removed, but user accounts may not have been fully deactivated. Our team has been notified."
+                        );
+                    }
+                    return new InternalErrorException(
+                        "An unexpected error occurred. Please try again later."
+                    );
+                })
+            ]);
         }
     }
 
@@ -482,7 +578,6 @@ export class CompaniesService {
                 const company = await companyRepo.findOne({
                     where: { id: companyId }
                 });
-
                 if (!company) {
                     throw new ResourceNotFoundException(
                         "The requested company could not be found."
@@ -500,6 +595,7 @@ export class CompaniesService {
 
                 const saved = await savedLocationRepo.save(savedLocation);
 
+                // Explicit DTO – never exposes internal columns accidentally.
                 return {
                     id: saved.id,
                     label: saved.label,
@@ -513,7 +609,32 @@ export class CompaniesService {
         } catch (err) {
             this.errorHandler.handle(
                 err,
-                "CompaniesService.createSavedLocation"
+                "CompaniesService.createSavedLocation",
+                [
+                    // 1. Unique constraint violation – most likely a duplicate label
+                    //    or another unique index on the SavedLocation table.
+                    rule(QueryFailedError, e => {
+                        const pg = (e as any).driverError;
+                        if (pg?.code === "23505") {
+                            return new ResourceConflictException(
+                                "A saved location with this label already exists. Please choose a different label."
+                            );
+                        }
+                        // Any other query error (e.g., FK failure) stays generic.
+                        return new InternalErrorException(
+                            "Could not create the saved location due to a data error. Please try again."
+                        );
+                    }),
+
+                    // 2. Catch‑all for any other runtime error.
+                    rule(
+                        Error,
+                        () =>
+                            new InternalErrorException(
+                                "An unexpected error occurred. Please try again later."
+                            )
+                    )
+                ]
             );
         }
     }
@@ -540,12 +661,8 @@ export class CompaniesService {
     > {
         try {
             const savedLocations = await this.savedLocationRepo.find({
-                where: {
-                    companyId
-                },
-                order: {
-                    label: "ASC"
-                }
+                where: { companyId },
+                order: { label: "ASC" }
             });
 
             return savedLocations.map(location => ({
@@ -560,10 +677,31 @@ export class CompaniesService {
         } catch (err) {
             this.errorHandler.handle(
                 err,
-                "CompaniesService.listSavedLocations"
+                "CompaniesService.listSavedLocations",
+                [
+                    // Read‑only query failure – most likely a connection or
+                    // timeout. The client only needs to know that data couldn't
+                    // be fetched right now, not why.
+                    rule(
+                        QueryFailedError,
+                        () =>
+                            new InternalErrorException(
+                                "Unable to retrieve saved locations at this time. Please try again."
+                            )
+                    ),
+                    // Catch‑all for anything else unexpected.
+                    rule(
+                        Error,
+                        () =>
+                            new InternalErrorException(
+                                "An unexpected error occurred. Please try again later."
+                            )
+                    )
+                ]
             );
         }
     }
+
     async updateCompanyNotification(
         companyId: string,
         dto: UpdateCompanyNotificationDto
@@ -585,7 +723,7 @@ export class CompaniesService {
                 // Update the notification settings.
                 await repo.update({ companyId }, dto);
 
-                // Return the updated notification settings.
+                // Return the updated settings – selected fields only.
                 return repo.findOne({
                     where: { companyId },
                     select: {
@@ -595,7 +733,6 @@ export class CompaniesService {
                         customerEmailOrderAssigned: true,
                         customerEmailOrderPickedUp: true,
                         customerEmailOrderInTransit: true,
-
                         customerEmailOrderDelivered: true,
                         customerEmailOrderFailed: true
                     }
@@ -604,7 +741,26 @@ export class CompaniesService {
         } catch (err) {
             this.errorHandler.handle(
                 err,
-                "CompaniesService.updateCompanyNotification"
+                "CompaniesService.updateCompanyNotification",
+                [
+                    // 1. Database update failure – likely a type mismatch,
+                    //    missing column, or connection issue.
+                    rule(
+                        QueryFailedError,
+                        () =>
+                            new InternalErrorException(
+                                "Unable to update notification settings at this time. Please try again."
+                            )
+                    ),
+                    // 2. Catch‑all for any other unexpected runtime error.
+                    rule(
+                        Error,
+                        () =>
+                            new InternalErrorException(
+                                "An unexpected error occurred. Please try again later."
+                            )
+                    )
+                ]
             );
         }
     }
@@ -612,17 +768,16 @@ export class CompaniesService {
     async getCompanyNotification(companyId: string) {
         try {
             const notification = await this.companyNotificationRepo.findOne({
-                where: {
-                    companyId
-                }
+                where: { companyId }
             });
 
             if (!notification) {
                 throw new ResourceNotFoundException(
-                    "No notifications found for this company"
+                    "No notifications found for this company."
                 );
             }
 
+            // Hand‑pick the fields the client is allowed to see.
             return {
                 customerEmailEnabled: notification.customerEmailEnabled,
                 teamEmailEnabled: notification.teamEmailEnabled,
@@ -643,11 +798,28 @@ export class CompaniesService {
         } catch (err) {
             this.errorHandler.handle(
                 err,
-                "CompaniesService.getCompanyNotification"
+                "CompaniesService.getCompanyNotification",
+                [
+                    // Database read error – connection, timeout, etc.
+                    rule(
+                        QueryFailedError,
+                        () =>
+                            new InternalErrorException(
+                                "Unable to retrieve notification settings at this time. Please try again."
+                            )
+                    ),
+                    // Any other unexpected runtime error.
+                    rule(
+                        Error,
+                        () =>
+                            new InternalErrorException(
+                                "An unexpected error occurred. Please try again later."
+                            )
+                    )
+                ]
             );
         }
     }
-
     /**
      * Retrieves a saved location belonging to a company.
      *
@@ -695,7 +867,24 @@ export class CompaniesService {
                 createdAt: location.createdAt
             };
         } catch (err) {
-            this.errorHandler.handle(err, "CompaniesService.getSavedLocation");
+            this.errorHandler.handle(err, "CompaniesService.getSavedLocation", [
+                // Database read error – connection, timeout, etc.
+                rule(
+                    QueryFailedError,
+                    () =>
+                        new InternalErrorException(
+                            "Unable to retrieve the saved location at this time. Please try again."
+                        )
+                ),
+                // Any other unexpected runtime error.
+                rule(
+                    Error,
+                    () =>
+                        new InternalErrorException(
+                            "An unexpected error occurred. Please try again later."
+                        )
+                )
+            ]);
         }
     }
 
@@ -767,7 +956,32 @@ export class CompaniesService {
         } catch (err) {
             this.errorHandler.handle(
                 err,
-                "CompaniesService.updateSavedLocation"
+                "CompaniesService.updateSavedLocation",
+                [
+                    // 1. Unique constraint violation – most likely a duplicate label
+                    //    for the same company.
+                    rule(QueryFailedError, e => {
+                        const pg = (e as any).driverError;
+                        if (pg?.code === "23505") {
+                            return new ResourceConflictException(
+                                "A saved location with this label already exists. Please choose a different label."
+                            );
+                        }
+                        // Any other query error (e.g., FK failure, connection issue)
+                        // stays generic.
+                        return new InternalErrorException(
+                            "Unable to update the saved location due to a data error. Please try again."
+                        );
+                    }),
+                    // 2. Catch‑all for any other unexpected runtime error.
+                    rule(
+                        Error,
+                        () =>
+                            new InternalErrorException(
+                                "An unexpected error occurred. Please try again later."
+                            )
+                    )
+                ]
             );
         }
     }
@@ -785,35 +999,51 @@ export class CompaniesService {
      * If the saved location does not exist for the company.
      */
     async deleteSavedLocation(
-        companyId: string,
-        savedLocationId: string
-    ): Promise<void> {
-        try {
-            return this.withTransaction(undefined, async trx => {
-                const savedLocationRepo = trx.getRepository(SavedLocation);
+    companyId: string,
+    savedLocationId: string,
+): Promise<void> {
+    try {
+        return this.withTransaction(undefined, async (trx) => {
+            const savedLocationRepo = trx.getRepository(SavedLocation);
 
-                const location = await savedLocationRepo.findOne({
-                    where: {
-                        id: savedLocationId,
-                        companyId
-                    }
-                });
-
-                if (!location) {
-                    throw new ResourceNotFoundException(
-                        "The requested saved location could not be found."
-                    );
-                }
-
-                await savedLocationRepo.remove(location);
+            const location = await savedLocationRepo.findOne({
+                where: {
+                    id: savedLocationId,
+                    companyId,
+                },
             });
-        } catch (err) {
-            this.errorHandler.handle(
-                err,
-                "CompaniesService.deleteSavedLocation"
-            );
-        }
+
+            if (!location) {
+                throw new ResourceNotFoundException(
+                    "The requested saved location could not be found.",
+                );
+            }
+
+            await savedLocationRepo.remove(location);
+        });
+    } catch (err) {
+        this.errorHandler.handle(
+            err,
+            "CompaniesService.deleteSavedLocation",
+            [
+                // Database error during deletion – most likely a foreign‑key
+                // constraint (location still referenced by orders) or a
+                // connection problem.
+                rule(QueryFailedError, () =>
+                    new InternalErrorException(
+                        "Unable to delete the saved location. It may be in use or temporarily unavailable.",
+                    ),
+                ),
+                // Any other unexpected runtime error.
+                rule(Error, () =>
+                    new InternalErrorException(
+                        "An unexpected error occurred. Please try again later.",
+                    ),
+                ),
+            ],
+        );
     }
+}
 
     /**
      * Runs `work` inside a transaction.

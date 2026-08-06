@@ -63,7 +63,7 @@ export class UsersService {
         },
         manager?: EntityManager
     ): Promise<UserRole> {
-        try {
+        
             return this.withTransaction(manager, async trx => {
                 const repo = trx.getRepository(UserRole);
 
@@ -84,9 +84,7 @@ export class UsersService {
 
                 return await repo.save(userRole);
             });
-        } catch (err) {
-            this.errorHandler.handle(err, "UsersService.createUserRole");
-        }
+
     }
 
     /**

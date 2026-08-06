@@ -6,17 +6,31 @@ import {
 } from "@nestjs/common";
 import type { FastifyRequest } from "fastify";
 import {
+    ForbiddenAppException,
     InternalErrorException,
     UnauthorizedAppException
 } from "#/common/exceptions";
 import { SupabaseJwtVerifierService } from "#/common/auth/supabase-jwt-verifier.service";
 import type { AuthenticatedUser } from "#/common/types/authenticated-user.type";
+import { RedisCacheService } from "#/common/cache/redis-cache.service";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { UserRole } from "#/common/entities/user-role.entity";
+import { TeamMemberStatus } from "#/common/constants/team-member-status.constant";
 
 @Injectable()
 export class SupabaseAuthGuard implements CanActivate {
-    private readonly logger: Logger = new Logger(SupabaseAuthGuard.name);
+    private readonly logger = new Logger(SupabaseAuthGuard.name);
 
-    constructor(private readonly verifier: SupabaseJwtVerifierService) {}
+    // How long we cache the user-company mapping (seconds)
+    private static readonly USER_COMPANY_CACHE_TTL = 300;
+
+    constructor(
+        private readonly verifier: SupabaseJwtVerifierService,
+        private readonly cache: RedisCacheService,
+        @InjectRepository(UserRole)
+        private readonly userRoleRepo: Repository<UserRole>
+    ) {}
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const request = context.switchToHttp().getRequest<FastifyRequest>();
@@ -24,7 +38,7 @@ export class SupabaseAuthGuard implements CanActivate {
 
         if (!token) {
             this.logger.warn(
-                `Auth failed: missing or malformed Authorization header [reqId: ${this.getRequestId(
+                `Auth failed: missing bearer token [reqId: ${this.getRequestId(
                     request
                 )}]`
             );
@@ -32,14 +46,60 @@ export class SupabaseAuthGuard implements CanActivate {
         }
 
         try {
+            // 1. Verify the Supabase JWT – payload already contains sub, email, etc.
             const payload = await this.verifier.verify(token);
 
-            request.user = payload;
+            // 2. Lookup (or cache) the user's company membership
+            const userId: string = payload.id;
+            const membership = await this.cache.getOrSet<Pick<
+                UserRole,
+                "companyId" | "role" | "status"
+            > | null>(
+                `user:company:${userId}`,
+                SupabaseAuthGuard.USER_COMPANY_CACHE_TTL,
+                async () =>
+                    await this.userRoleRepo.findOne({
+                        where: { userId },
+                        select: { companyId: true, role: true, status: true }
+                    })
+            );
+
+            if (!membership) {
+                this.logger.warn(
+                    `Auth failed: no UserRole for ${userId} [reqId: ${this.getRequestId(
+                        request
+                    )}]`
+                );
+                throw new ForbiddenAppException(
+                    "Your account is not associated with any company"
+                );
+            }
+
+            if (membership.status !== TeamMemberStatus.ACTIVE) {
+                this.logger.warn(
+                    `Auth failed: inactive status ${
+                        membership.status
+                    } for ${userId} [reqId: ${this.getRequestId(request)}]`
+                );
+                throw new ForbiddenAppException(
+                    "Your account is not active. Please contact your administrator."
+                );
+            }
+
+            // 3. Enrich the request object – downstream everything now has companyId
+            request.user = {
+                ...payload,
+                companyId: membership?.companyId ?? null,
+                role: membership.role
+            };
 
             return true;
         } catch (err) {
-            // Pass through our own auth exceptions without re-wrapping
-            if (err instanceof UnauthorizedAppException) {
+            // Re‑throw auth‑specific exceptions without modification
+            if (
+                err instanceof UnauthorizedAppException ||
+                err instanceof ForbiddenAppException
+            ) {
                 this.logger.warn(
                     `Auth failed: ${err.message} [reqId: ${this.getRequestId(
                         request
@@ -48,8 +108,7 @@ export class SupabaseAuthGuard implements CanActivate {
                 throw err;
             }
 
-            // System-level errors (JWKS unreachable, Redis down, etc.)
-            // Log full detail server-side, send generic message client-side.
+            // System‑level errors (JWKS unreachable, Redis down, DB down)
             this.logger.error(
                 `JWT verification system error [reqId: ${this.getRequestId(
                     request
@@ -62,10 +121,6 @@ export class SupabaseAuthGuard implements CanActivate {
         }
     }
 
-    /**
-     * Robust extraction: handles extra whitespace and case-insensitive scheme.
-     * Returns null for any malformed header so we fail closed.
-     */
     private extractToken(request: FastifyRequest): string | null {
         const header = request.headers.authorization;
         if (typeof header !== "string") return null;
@@ -74,13 +129,7 @@ export class SupabaseAuthGuard implements CanActivate {
         if (parts.length !== 2) return null;
 
         const [scheme, token] = parts;
-        if (
-            scheme?.toLowerCase() !== "bearer" ||
-            !token ||
-            token.length === 0
-        ) {
-            return null;
-        }
+        if (scheme?.toLowerCase() !== "bearer" || !token) return null;
 
         return token;
     }

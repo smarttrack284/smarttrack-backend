@@ -8,17 +8,16 @@ import { Reflector } from "@nestjs/core";
 import type { FastifyRequest } from "fastify";
 import { REQUIRE_PLAN_KEY } from "#/common/decorators/require-plan.decorator";
 import {
+    ForbiddenAppException,
     InternalErrorException,
     UnauthorizedAppException
 } from "#/common/exceptions";
-import { UsersService } from "#/modules/users/users.service";
 import { SubscriptionsService } from "#/modules/subscriptions/subscriptions.service";
 import { RedisCacheService } from "#/common/cache/redis-cache.service";
-import type { AuthenticatedUser } from "#/common/types/authenticated-user.type";
 
 /**
- * Lean subscription shape for caching — avoids TypeORM circular JSON
- * references and keeps Redis payload small.
+ * Lean subscription shape for caching — avoids TypeORM circular references
+ * and keeps the Redis payload small.
  */
 interface CachedSubscription {
     plan: string;
@@ -27,25 +26,18 @@ interface CachedSubscription {
     companyId: string;
 }
 
-/**
- * Subscription states that grant feature access.
- * 'trialing' is included because trial users typically have full
- * feature access until the trial ends.
- */
 const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active"]);
 
 @Injectable()
 export class PlanGuard implements CanActivate {
     private readonly logger = new Logger(PlanGuard.name);
 
-    // Short TTLs by design: auth data should be fresh, but we still
-    // want to absorb burst traffic on gated endpoints.
-    private readonly USER_ROLE_TTL = 60; // seconds
-    private readonly SUBSCRIPTION_TTL = 60; // seconds
+    // Short TTL – subscription data should be fairly fresh, but caching
+    // absorbs burst traffic on gated endpoints.
+    private static readonly SUBSCRIPTION_TTL = 60; // seconds
 
     constructor(
         private readonly reflector: Reflector,
-        private readonly usersService: UsersService,
         private readonly subscriptionsService: SubscriptionsService,
         private readonly cache: RedisCacheService
     ) {}
@@ -62,26 +54,25 @@ export class PlanGuard implements CanActivate {
 
         const request = context.switchToHttp().getRequest<FastifyRequest>();
 
-        if (!request.user?.id) {
-            throw new UnauthorizedAppException("Missing authenticated user");
+        // The SupabaseAuthGuard has already validated the JWT and attached
+        // the user object with companyId and role.
+        const userId: string | undefined = request.user?.id;
+        const companyId: string | null = request.user?.companyId ?? null;
+
+        if (!userId || !companyId) {
+            this.logger.warn(
+                `PlanGuard: request.user missing id or companyId – was SupabaseAuthGuard applied?`
+            );
+            throw new UnauthorizedAppException(
+                "Authentication required to access this resource"
+            );
         }
 
         try {
-            const companyId = await this.resolveCompanyId(request.user);
-
-            if (!companyId) {
-                this.logger.warn(
-                    `PlanGuard: User ${request.user.id} has no company association`
-                );
-                throw new UnauthorizedAppException(
-                    "User is not associated with a company"
-                );
-            }
-
             const subscription =
                 await this.cache.getOrSet<CachedSubscription | null>(
                     PlanGuard.subscriptionKey(companyId),
-                    this.SUBSCRIPTION_TTL,
+                    PlanGuard.SUBSCRIPTION_TTL,
                     async () => {
                         const sub =
                             await this.subscriptionsService.getSubscriptionByCompanyId(
@@ -95,15 +86,15 @@ export class PlanGuard implements CanActivate {
                 this.logger.warn(
                     `PlanGuard: No subscription found for company ${companyId}`
                 );
-                throw new UnauthorizedAppException(
-                    "No active subscription found"
+                throw new ForbiddenAppException(
+                    "No active subscription found. Please contact your administrator."
                 );
             }
 
             const currentPlan = subscription.plan?.toLowerCase()?.trim();
             if (!currentPlan) {
                 this.logger.error(
-                    `PlanGuard: Subscription for company ${companyId} has no plan assigned`
+                    `PlanGuard: Subscription for company ${companyId} has no plan`
                 );
                 throw new InternalErrorException(
                     "Subscription configuration error"
@@ -113,9 +104,9 @@ export class PlanGuard implements CanActivate {
             const status = subscription.status?.toLowerCase();
             if (!status || !ACTIVE_SUBSCRIPTION_STATUSES.has(status)) {
                 this.logger.warn(
-                    `PlanGuard: Subscription for company ${companyId} is not active (status: ${subscription.status})`
+                    `PlanGuard: Subscription status '${subscription.status}' not active for company ${companyId}`
                 );
-                throw new UnauthorizedAppException(
+                throw new ForbiddenAppException(
                     "Your subscription is not active. Please renew to access this feature."
                 );
             }
@@ -123,9 +114,9 @@ export class PlanGuard implements CanActivate {
             const periodEnd = subscription.currentPeriodEnd;
             if (periodEnd && new Date() > new Date(periodEnd)) {
                 this.logger.warn(
-                    `PlanGuard: Subscription for company ${companyId} expired on ${periodEnd}`
+                    `PlanGuard: Subscription expired on ${periodEnd} for company ${companyId}`
                 );
-                throw new UnauthorizedAppException(
+                throw new ForbiddenAppException(
                     "Your subscription has expired. Please renew to access this feature."
                 );
             }
@@ -133,30 +124,36 @@ export class PlanGuard implements CanActivate {
             const normalizedRequired = requiredPlans.map(p =>
                 p.toLowerCase().trim()
             );
-
             if (!normalizedRequired.includes(currentPlan)) {
                 this.logger.log(
-                    `PlanGuard: Access denied for company ${companyId}. ` +
-                        `Required: [${normalizedRequired.join(
-                            ", "
-                        )}], Actual: ${currentPlan}`
+                    `PlanGuard: Access denied – required [${normalizedRequired.join(
+                        ", "
+                    )}], actual ${currentPlan} for company ${companyId}`
                 );
-                throw new UnauthorizedAppException(
+                throw new ForbiddenAppException(
                     "This feature is not available on your current plan. Please upgrade to access it."
                 );
             }
 
             // Attach clean subscription context for downstream use
-            request.subscription = { plan: currentPlan, status, companyId };
+            request.subscription = {
+                plan: currentPlan,
+                status,
+                companyId
+            };
 
             return true;
         } catch (err) {
-            if (err instanceof UnauthorizedAppException) {
+            if (
+                err instanceof UnauthorizedAppException ||
+                err instanceof ForbiddenAppException ||
+                err instanceof InternalErrorException
+            ) {
                 throw err;
             }
 
             this.logger.error(
-                `PlanGuard: Unexpected error for user ${request.user.id} - ${
+                `PlanGuard: Unexpected error for user ${userId} – ${
                     err instanceof Error ? err.message : String(err)
                 }`,
                 err instanceof Error ? err.stack : undefined
@@ -167,46 +164,10 @@ export class PlanGuard implements CanActivate {
         }
     }
 
-    /**
-     * Public cache-key helpers so your webhook / billing handlers can
-     * invalidate immediately when a subscription changes.
-     *
-     * Example usage in a Stripe webhook controller:
-     *   await cache.del(PlanGuard.subscriptionKey(companyId));
-     */
     static subscriptionKey(companyId: string): string {
         return `plan-guard:subscription:${companyId}`;
     }
 
-    static userRoleKey(userId: string): string {
-        return `plan-guard:user-role:${userId}`;
-    }
-
-    /**
-     * Resolves companyId with the least I/O possible:
-     * 1. JWT payload (zero I/O — ideal)
-     * 2. Redis cache (1 RTT)
-     * 3. Users table (fallback, then cached)
-     */
-    private async resolveCompanyId(
-        user: AuthenticatedUser
-    ): Promise<string | null> {
-        return this.cache.getOrSet<string | null>(
-            PlanGuard.userRoleKey(user.id),
-            this.USER_ROLE_TTL,
-            async () => {
-                const userRole = await this.usersService.getUserRoleByUserId(
-                    user.id
-                );
-                return userRole?.companyId ?? null;
-            }
-        );
-    }
-
-    /**
-     * Strip TypeORM metadata / circular refs before caching.
-     * Only persist the fields the guard actually needs.
-     */
     private toCachedSubscription(sub: any): CachedSubscription {
         return {
             plan: sub.plan,
