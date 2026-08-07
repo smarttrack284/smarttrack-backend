@@ -7,10 +7,11 @@ import { UsersModule } from '#/modules/users/users.module';
 import { AnalyticsService } from './analytics.service';
 import { AnalyticsController } from './analytics.controller';
 import { SubscriptionsModule } from '#/modules/subscriptions/subscriptions.module';
+import { UserRole } from '#/common/entities/user-role.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Order, TripStop, Company]),
+    TypeOrmModule.forFeature([Order, TripStop, Company,UserRole]),
     UsersModule,
     SubscriptionsModule,
   ],

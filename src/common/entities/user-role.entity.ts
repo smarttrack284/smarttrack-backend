@@ -1,17 +1,17 @@
 import {
-    Column,
-    CreateDateColumn,
-    Entity,
-    Index,
-    JoinColumn,
-    ManyToOne,
-    OneToOne,
-    PrimaryGeneratedColumn,
-    UpdateDateColumn
-} from "typeorm";
-import { TeamRoleType } from "#/common/types/team-role.type";
-import { TeamMemberStatus } from "#/common/constants/team-member-status.constant";
-import { Company } from "#/common/entities/company.entity";
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn
+} from 'typeorm';
+import { TeamRoleType } from '#/common/types/team-role.type';
+import { TeamMemberStatus } from '#/common/constants/team-member-status.constant';
+import { Company } from '#/common/entities/company.entity';
+
 // import { NotificationSetting } from "./notification-setting.entity";
 
 @Entity("user_roles")
@@ -30,12 +30,11 @@ export class UserRole {
     @Index()
     companyId: string;
 
-    // @ManyToOne(() => Company, { onDelete: 'CASCADE' })
-    // @JoinColumn({ name: 'company_id' })
-    // company: Company;
+    @ManyToOne(() => Company, { onDelete: 'CASCADE' })
+    @JoinColumn({ name: 'company_id' })
+    company: Company;
 
-    // @OneToOne(() => NotificationSetting, (settings) => settings.userRole)
-    // notificationSettings: NotificationSetting;
+
 
     @Column({ type: "varchar", length: 255, nullable: true })
     name: string | null;

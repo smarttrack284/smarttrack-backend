@@ -15,10 +15,11 @@ import { RadarRateLimiter } from './radar-rate-limiter.service';
 import { TRACKING_QUEUE_NAME } from './constants/tracking-queue.constant';
 import { DispatchModule } from '#/modules/dispatch/dispatch.module';
 import { PresenceModule } from '#/modules/presence/presence.module';
+import { UserRole } from '#/common/entities/user-role.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Trip, TripStop, Order]),
+    TypeOrmModule.forFeature([Trip, TripStop, Order, UserRole]),
     UsersModule,
     forwardRef(() => DispatchModule),
     BullModule.registerQueue({ name: TRACKING_QUEUE_NAME }),

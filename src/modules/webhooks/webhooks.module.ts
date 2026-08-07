@@ -12,10 +12,11 @@ import { WebhooksDispatcherService } from './webhooks-dispatcher.service';
 import { WebhookDeliveryProcessor } from './webhook-delivery.processor';
 import { WebhooksController } from './webhooks.controller';
 import { WebhookDeliveryCleanupService } from '#/modules/webhooks/webhook-delivery-cleanup.service';
+import { UserRole } from '#/common/entities/user-role.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([WebhookEndpoint, WebhookDelivery]),
+    TypeOrmModule.forFeature([WebhookEndpoint, WebhookDelivery, UserRole]),
     BullModule.registerQueue({ name: WEBHOOK_QUEUE_NAME }),
     UsersModule,
     SubscriptionsModule,
