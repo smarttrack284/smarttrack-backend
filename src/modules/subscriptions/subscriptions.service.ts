@@ -1,6 +1,11 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
-import { DataSource, EntityManager, Repository } from "typeorm";
+import {
+    DataSource,
+    EntityManager,
+    Repository,
+    QueryFailedError
+} from "typeorm";
 import {
     PaymentProvider,
     Subscription
@@ -11,98 +16,131 @@ import {
     SubscriptionStatus
 } from "#/common/constants/subscription-plan.constant";
 import {
+    InternalErrorException,
     ResourceConflictException,
     ResourceNotFoundException
 } from "#/common/exceptions";
+import {
+    ErrorHandlerService,
+    rule
+} from "#/common/errors/error-handler.service";
+import { RedisCacheService } from "#/common/cache/redis-cache.service";
+import { PlanGuard } from "#/common/guards/plan.guard";
 
 @Injectable()
 export class SubscriptionsService {
+    private readonly logger = new Logger(SubscriptionsService.name);
+
     constructor(
         @InjectDataSource() private readonly dataSource: DataSource,
         @InjectRepository(Subscription)
-        private readonly subscriptionRepo: Repository<Subscription>
+        private readonly subscriptionRepo: Repository<Subscription>,
+        private readonly errorHandler: ErrorHandlerService,
+        private readonly cache: RedisCacheService
     ) {}
 
     /**
      * Creates the initial subscription for a company.
-     *
-     * A company can only have one subscription. This method validates that no
-     * subscription already exists before creating a new active subscription with
-     * the specified plan.
-     *
-     * If a transaction manager is provided, the subscription is created within the
-     * existing transaction; otherwise, a new transaction is started.
-     *
-     * @param companyId - The unique identifier of the company.
-     * @param plan - The subscription plan to assign. Defaults to the Free plan.
-     * @param manager - Optional transaction manager for participating in an existing transaction.
-     *
-     * @returns The newly created subscription.
-     *
-     * @throws {ResourceConflictException}
-     * If the company already has a subscription.
      */
     async createSubscription(
         companyId: string,
         plan: SubscriptionPlan = SubscriptionPlan.FREE,
         manager?: EntityManager
     ): Promise<Subscription> {
-        return this.withTransaction(manager, async trx => {
-            const repo = trx.getRepository(Subscription);
+        try {
+            return this.withTransaction(manager, async trx => {
+                const repo = trx.getRepository(Subscription);
 
-            const existing = await repo.findOne({
-                where: { companyId }
+                const existing = await repo.findOne({
+                    where: { companyId }
+                });
+
+                if (existing) {
+                    throw new ResourceConflictException(
+                        "A subscription already exists for this company. Each company can only have one active subscription."
+                    );
+                }
+
+                const subscription = repo.create({
+                    companyId,
+                    plan,
+                    status: SubscriptionStatus.ACTIVE
+                });
+
+                const saved = await repo.save(subscription);
+                // Invalidate the PlanGuard cache for this company
+                await this.invalidatePlanGuardCache(companyId);
+                return saved;
             });
-
-            if (existing) {
-                throw new ResourceConflictException(
-                    "A subscription already exists for this company. Each company can only have one active subscription."
-                );
-            }
-
-            const subscription = repo.create({
-                companyId,
-                plan,
-                status: SubscriptionStatus.ACTIVE
-            });
-
-            return repo.save(subscription);
-        });
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "SubscriptionsService.createSubscription",
+                [
+                    rule(
+                        QueryFailedError,
+                        () =>
+                            new InternalErrorException(
+                                "Unable to create subscription. Please try again."
+                            )
+                    ),
+                    rule(
+                        Error,
+                        () =>
+                            new InternalErrorException(
+                                "An unexpected error occurred. Please try again later."
+                            )
+                    )
+                ]
+            );
+        }
     }
 
     /**
      * Retrieves the subscription associated with a company.
-     *
-     * Looks up the company's subscription and optionally participates in an
-     * existing transaction when a transaction manager is provided.
-     *
-     * @param companyId - The unique identifier of the company.
-     * @param manager - Optional transaction manager for participating in an existing transaction.
-     *
-     * @returns The company's subscription.
-     *
-     * @throws {ResourceNotFoundException}
-     * If no subscription exists for the specified company.
      */
     async getSubscriptionByCompanyId(
         companyId: string,
         manager?: EntityManager
     ): Promise<Subscription> {
-        const repo = manager
-            ? manager.getRepository(Subscription)
-            : this.subscriptionRepo;
+        try {
+            const repo = manager
+                ? manager.getRepository(Subscription)
+                : this.subscriptionRepo;
 
-        const subscription = await repo.findOne({
-            where: { companyId }
-        });
+            const subscription = await repo.findOne({
+                where: { companyId }
+            });
 
-        if (!subscription) {
-            throw new ResourceNotFoundException(
-                "No subscription was found for this company."
+            if (!subscription) {
+                throw new ResourceNotFoundException(
+                    "No subscription was found for this company."
+                );
+            }
+
+            return subscription;
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "SubscriptionsService.getSubscriptionByCompanyId",
+                [
+                    rule(
+                        QueryFailedError,
+                        () =>
+                            new InternalErrorException(
+                                "Unable to retrieve subscription. Please try again."
+                            )
+                    ),
+                    rule(
+                        Error,
+                        () =>
+                            new InternalErrorException(
+                                "An unexpected error occurred. Please try again later."
+                            )
+                    )
+                ]
             );
         }
-
-        return subscription;
     }
 
     getPlanLimits(plan: SubscriptionPlan): {
@@ -116,6 +154,10 @@ export class SubscriptionsService {
         };
     }
 
+    /**
+     * Updates a subscription from Paystack data (plan, status, period).
+     * Uses `this.save` to guarantee cache invalidation.
+     */
     async updateFromPaystackSubscription(input: {
         companyId: string;
         paystackCustomerCode: string;
@@ -124,45 +166,168 @@ export class SubscriptionsService {
         status: SubscriptionStatus;
         currentPeriodEnd: Date;
     }): Promise<Subscription> {
-        const subscription = await this.getSubscriptionByCompanyId(
-            input.companyId
-        );
-        subscription.plan = input.plan;
-        subscription.status = input.status;
-        subscription.currentPeriodEnd = input.currentPeriodEnd;
-        subscription.paymentProvider = PaymentProvider.PAYSTACK;
-        subscription.paymentCustomerId = input.paystackCustomerCode;
-        subscription.paymentSubscriptionId = input.paystackSubscriptionCode;
-        return this.subscriptionRepo.save(subscription);
+        try {
+            const subscription = await this.getSubscriptionByCompanyId(
+                input.companyId
+            );
+            subscription.plan = input.plan;
+            subscription.status = input.status;
+            subscription.currentPeriodEnd = input.currentPeriodEnd;
+            subscription.paymentProvider = PaymentProvider.PAYSTACK;
+            subscription.paymentCustomerId = input.paystackCustomerCode;
+            subscription.paymentSubscriptionId = input.paystackSubscriptionCode;
+            subscription.lastExpiryReminderSentAt = null
+            // save() will invalidate cache
+            return this.save(subscription);
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "SubscriptionsService.updateFromPaystackSubscription",
+                [
+                    rule(
+                        QueryFailedError,
+                        () =>
+                            new InternalErrorException(
+                                "Unable to update subscription. Please try again."
+                            )
+                    ),
+                    rule(
+                        Error,
+                        () =>
+                            new InternalErrorException(
+                                "An unexpected error occurred. Please try again later."
+                            )
+                    )
+                ]
+            );
+        }
     }
 
+    /**
+     * Downgrades a subscription to FREE on cancellation.
+     * Uses `this.save` for cache invalidation.
+     */
     async downgradeToFreeOnCancellation(
         paystackSubscriptionCode: string
     ): Promise<void> {
-        const subscription = await this.subscriptionRepo.findOne({
-            where: { paymentSubscriptionId: paystackSubscriptionCode }
-        });
-        if (!subscription) return; // unknown subscription — likely a replayed/duplicate webhook, safe to ignore
-        subscription.plan = SubscriptionPlan.FREE;
-        subscription.status = SubscriptionStatus.CANCELED;
-        await this.subscriptionRepo.save(subscription);
+        try {
+            const subscription = await this.subscriptionRepo.findOne({
+                where: { paymentSubscriptionId: paystackSubscriptionCode }
+            });
+            if (!subscription) return;
+
+            subscription.plan = SubscriptionPlan.FREE;
+            subscription.status = SubscriptionStatus.CANCELED;
+            await this.save(subscription);
+        } catch (err) {
+            this.logger.error(
+                `Failed to downgrade subscription for Paystack code ${paystackSubscriptionCode}`,
+                (err as Error).stack
+            );
+            // Swallow – webhook handler expects no throw
+        }
     }
 
+    /**
+     * Marks a subscription as PAST_DUE.
+     * Uses `this.save` for cache invalidation.
+     */
     async markPastDue(paystackSubscriptionCode: string): Promise<void> {
-        const subscription = await this.subscriptionRepo.findOne({
-            where: { paymentSubscriptionId: paystackSubscriptionCode }
-        });
-        if (!subscription) return;
-        subscription.status = SubscriptionStatus.PAST_DUE;
-        await this.subscriptionRepo.save(subscription);
+        try {
+            const subscription = await this.subscriptionRepo.findOne({
+                where: { paymentSubscriptionId: paystackSubscriptionCode }
+            });
+            if (!subscription) return;
+
+            subscription.status = SubscriptionStatus.PAST_DUE;
+            await this.save(subscription);
+        } catch (err) {
+            this.logger.error(
+                `Failed to mark subscription past due for Paystack code ${paystackSubscriptionCode}`,
+                (err as Error).stack
+            );
+        }
     }
 
+    /**
+     * Retrieves a subscription by Paystack customer code.
+     */
     async getByPaystackCustomerCode(
         customerCode: string
     ): Promise<Subscription | null> {
-        return this.subscriptionRepo.findOne({
-            where: { paymentCustomerId: customerCode }
-        });
+        try {
+            return await this.subscriptionRepo.findOne({
+                where: { paymentCustomerId: customerCode }
+            });
+        } catch (err) {
+            this.errorHandler.handle(
+                err,
+                "SubscriptionsService.getByPaystackCustomerCode",
+                [
+                    rule(
+                        QueryFailedError,
+                        () =>
+                            new InternalErrorException(
+                                "Unable to retrieve subscription. Please try again."
+                            )
+                    ),
+                    rule(
+                        Error,
+                        () =>
+                            new InternalErrorException(
+                                "An unexpected error occurred. Please try again later."
+                            )
+                    )
+                ]
+            );
+        }
+    }
+
+    /**
+     * Retrieves a subscription by Paystack subscription code.
+     */
+    async getByPaystackSubscriptionCode(
+        subscriptionCode: string
+    ): Promise<Subscription | null> {
+        try {
+            return await this.subscriptionRepo.findOne({
+                where: { paymentSubscriptionId: subscriptionCode }
+            });
+        } catch (err) {
+            this.logger.error(
+                `Failed to get subscription by Paystack code ${subscriptionCode}`,
+                (err as Error).stack
+            );
+            return null; // safe fallback
+        }
+    }
+
+    /**
+     * Saves a subscription and invalidates the PlanGuard cache.
+     *
+     * Every mutation that updates plan, status, or currentPeriodEnd must
+     * use this method to ensure the guard never serves stale data.
+     */
+    async save(subscription: Subscription): Promise<Subscription> {
+        const saved = await this.subscriptionRepo.save(subscription);
+        await this.invalidatePlanGuardCache(saved.companyId);
+        return saved;
+    }
+
+    /**
+     * Deletes the PlanGuard cache entry for a company.
+     * Uses the same key pattern defined in PlanGuard.
+     */
+    private async invalidatePlanGuardCache(companyId: string): Promise<void> {
+        try {
+            await this.cache.del(PlanGuard.subscriptionKey(companyId));
+        } catch (err) {
+            this.logger.error(
+                `Failed to invalidate PlanGuard cache for company ${companyId}`,
+                (err as Error).stack
+            );
+            // Non‑critical – cache will expire on its own in 60s
+        }
     }
 
     private async withTransaction<T>(

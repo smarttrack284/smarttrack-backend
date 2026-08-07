@@ -9,221 +9,253 @@ import { StopStatus } from "#/common/constants/stop-status.constant";
 import { RedisCacheService } from "#/common/cache/redis-cache.service";
 import { UsersService } from "#/modules/users/users.service";
 import { AnalyticsQueryDto } from "./dto/analytics-query.dto";
-import {InternalErrorException} from "#/common/exceptions"
-const ANALYTICS_TTL_SECONDS = 60; // analytics is inherently retrospective, not live — a full minute of staleness is a fine tradeoff for materially fewer expensive aggregate queries
+import { InternalErrorException } from "#/common/exceptions";
+
+const ANALYTICS_TTL_SECONDS = 60;
 
 @Injectable()
 export class AnalyticsService {
-    private readonly logger: Logger = new Logger(AnalyticsService.name);
-    constructor(
-        @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
-        @InjectRepository(TripStop)
-        private readonly tripStopRepo: Repository<TripStop>,
-        @InjectRepository(Company)
-        private readonly companyRepo: Repository<Company>,
-        private readonly cache: RedisCacheService,
-        private readonly usersService: UsersService
-    ) {}
+  private readonly logger: Logger = new Logger(AnalyticsService.name);
 
-    /**
-     * Retrieves analytics for a company within the requested date range.
-     *
-     * Analytics are cached for a short period to reduce database load and
-     * improve response times. If no cached data exists, the analytics are
-     * computed and stored in the cache before being returned.
-     *
-     * @param companyId - The unique identifier of the company.
-     * @param query - The analytics query containing the requested date range.
-     *
-     * @returns A summary of analytics, trend data, status breakdown, and top drivers.
-     *
-     * @throws {InternalErrorException}
-     * If the analytics could not be retrieved.
-     */
-    async getAnalytics(companyId: string, query: AnalyticsQueryDto) {
-        try {
-            const range = this.resolveDateRange(query);
+  constructor(
+    @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
+    @InjectRepository(TripStop)
+    private readonly tripStopRepo: Repository<TripStop>,
+    @InjectRepository(Company)
+    private readonly companyRepo: Repository<Company>,
+    private readonly cache: RedisCacheService,
+    private readonly usersService: UsersService,
+  ) {}
 
-            const cacheKey = `analytics:${companyId}:${range.from.toISOString()}:${range.to.toISOString()}`;
+  /**
+   * Retrieves analytics for a company within the requested date range.
+   *
+   * Analytics are cached for a short period to reduce database load.
+   * If any individual query fails, the corresponding part of the
+   * analytics is returned with safe fallback values (zeros/empty)
+   * rather than throwing an error, so partial data is always provided.
+   */
+  async getAnalytics(companyId: string, query: AnalyticsQueryDto) {
+    const range = this.resolveDateRange(query);
+    const cacheKey = `analytics:${companyId}:${range.from.toISOString()}:${range.to.toISOString()}`;
 
-            return this.cache.getOrSet(
-                cacheKey,
-                ANALYTICS_TTL_SECONDS,
-                async () => {
-                    const [summary, trend, statusBreakdown, topDrivers] =
-                        await Promise.all([
-                            this.computeSummary(companyId, range),
-                            this.computeTrend(companyId, range),
-                            this.computeStatusBreakdown(companyId, range),
-                            this.computeTopDrivers(companyId, range)
-                        ]);
+    return this.cache.getOrSet(cacheKey, ANALYTICS_TTL_SECONDS, async () => {
+      const [summary, trend, statusBreakdown, topDrivers] = await Promise.all([
+        this.computeSummary(companyId, range),
+        this.computeTrend(companyId, range),
+        this.computeStatusBreakdown(companyId, range),
+        this.computeTopDrivers(companyId, range),
+      ]);
 
-                    return {
-                        summary,
-                        trend,
-                        statusBreakdown,
-                        topDrivers
-                    };
-                }
-            );
-        } catch (error) {
-            this.logger.error(
-                `Failed to retrieve analytics for company ${companyId}.`,
-                error
-            );
+      return {
+        summary,
+        trend,
+        statusBreakdown,
+        topDrivers,
+      };
+    });
+  }
 
-            throw new InternalErrorException(
-                "We couldn't load your analytics at the moment. Please try again."
-            );
-        }
+  /** Defaults to the last 14 days if no range given. */
+  private resolveDateRange(query: AnalyticsQueryDto): {
+    from: Date;
+    to: Date;
+  } {
+    try {
+      const to = query.dateTo ? new Date(query.dateTo) : new Date();
+      const from = query.dateFrom
+        ? new Date(query.dateFrom)
+        : new Date(to.getTime() - 14 * 86_400_000);
+      return { from, to };
+    } catch (err) {
+      // If dates are invalid, fall back to a safe default.
+      this.logger.error(
+        `Invalid date range supplied for analytics`,
+        (err as Error).stack,
+      );
+      const now = new Date();
+      return {
+        from: new Date(now.getTime() - 14 * 86_400_000),
+        to: now,
+      };
     }
+  }
 
-    /** Defaults to the last 14 days if no range given — matches the frontend's AnalyticsToolbar default label ("Last 14 days"). */
-    private resolveDateRange(query: AnalyticsQueryDto): {
-        from: Date;
-        to: Date;
-    } {
-        const to = query.dateTo ? new Date(query.dateTo) : new Date();
-        const from = query.dateFrom
-            ? new Date(query.dateFrom)
-            : new Date(to.getTime() - 14 * 86_400_000);
-        return { from, to };
+  private async computeSummary(
+    companyId: string,
+    range: { from: Date; to: Date },
+  ) {
+    try {
+      const raw = await this.orderRepo
+        .createQueryBuilder("order")
+        .select("COUNT(*)", "totalOrders")
+        .addSelect(
+          `COUNT(*) FILTER (WHERE order.status = 'delivered')`,
+          "deliveredCount",
+        )
+        .addSelect(
+          `COUNT(*) FILTER (WHERE order.status = 'failed')`,
+          "failedCount",
+        )
+        .where("order.companyId = :companyId", { companyId })
+        .andWhere("order.createdAt BETWEEN :from AND :to", range)
+        .getRawOne();
+
+      const totalOrders = Number(raw.totalOrders);
+      const deliveredCount = Number(raw.deliveredCount);
+      const failedCount = Number(raw.failedCount);
+
+      const avgDeliveryMinutes = await this.computeAvgDeliveryMinutes(
+        companyId,
+        range,
+      );
+
+      return {
+        totalOrders,
+        completionRate:
+          totalOrders > 0 ? (deliveredCount / totalOrders) * 100 : 0,
+        avgDeliveryMinutes,
+        failedRate: totalOrders > 0 ? (failedCount / totalOrders) * 100 : 0,
+      };
+    } catch (err) {
+      this.logger.error(
+        `Failed to compute summary for company ${companyId}`,
+        (err as Error).stack,
+      );
+      return {
+        totalOrders: 0,
+        completionRate: 0,
+        avgDeliveryMinutes: 0,
+        failedRate: 0,
+      };
     }
+  }
 
-    private async computeSummary(
-        companyId: string,
-        range: { from: Date; to: Date }
-    ) {
-        const raw = await this.orderRepo
-            .createQueryBuilder("order")
-            .select("COUNT(*)", "totalOrders")
-            .addSelect(
-                `COUNT(*) FILTER (WHERE order.status = 'delivered')`,
-                "deliveredCount"
-            )
-            .addSelect(
-                `COUNT(*) FILTER (WHERE order.status = 'failed')`,
-                "failedCount"
-            )
-            .where("order.companyId = :companyId", { companyId })
-            .andWhere("order.createdAt BETWEEN :from AND :to", range)
-            .getRawOne();
+  private async computeAvgDeliveryMinutes(
+    companyId: string,
+    range: { from: Date; to: Date },
+  ): Promise<number> {
+    try {
+      const raw = await this.tripStopRepo
+        .createQueryBuilder("stop")
+        .innerJoin("stop.trip", "trip")
+        .select(
+          "AVG(EXTRACT(EPOCH FROM (stop.completedAt - stop.arrivedAt)) / 60)",
+          "avgMinutes",
+        )
+        .where("trip.companyId = :companyId", { companyId })
+        .andWhere("stop.status = :status", { status: StopStatus.COMPLETED })
+        .andWhere("stop.arrivedAt IS NOT NULL")
+        .andWhere("stop.completedAt BETWEEN :from AND :to", range)
+        .getRawOne();
 
-        const totalOrders = Number(raw.totalOrders);
-        const deliveredCount = Number(raw.deliveredCount);
-        const failedCount = Number(raw.failedCount);
-
-        // Real duration, from actual timestamps — pickedUp -> delivered, not a
-        // straight-line/guessed figure. Matches your earlier insistence on
-        // real over estimated data for anything user-facing.
-        const avgDeliveryMinutes = await this.computeAvgDeliveryMinutes(
-            companyId,
-            range
-        );
-
-        return {
-            totalOrders,
-            completionRate:
-                totalOrders > 0 ? (deliveredCount / totalOrders) * 100 : 0,
-            avgDeliveryMinutes,
-            failedRate: totalOrders > 0 ? (failedCount / totalOrders) * 100 : 0
-        };
+      return raw?.avgMinutes ? Math.round(Number(raw.avgMinutes)) : 0;
+    } catch (err) {
+      this.logger.error(
+        `Failed to compute average delivery minutes for company ${companyId}`,
+        (err as Error).stack,
+      );
+      return 0;
     }
+  }
 
-    private async computeAvgDeliveryMinutes(
-        companyId: string,
-        range: { from: Date; to: Date }
-    ): Promise<number> {
-        const raw = await this.tripStopRepo
-            .createQueryBuilder("stop")
-            .innerJoin("stop.trip", "trip")
-            .select(
-                "AVG(EXTRACT(EPOCH FROM (stop.completedAt - stop.arrivedAt)) / 60)",
-                "avgMinutes"
-            )
-            .where("trip.companyId = :companyId", { companyId })
-            .andWhere("stop.status = :status", { status: StopStatus.COMPLETED })
-            .andWhere("stop.arrivedAt IS NOT NULL")
-            .andWhere("stop.completedAt BETWEEN :from AND :to", range)
-            .getRawOne();
+  private async computeTrend(
+    companyId: string,
+    range: { from: Date; to: Date },
+  ) {
+    try {
+      const raw = await this.orderRepo
+        .createQueryBuilder("order")
+        .select(`DATE_TRUNC('day', order.createdAt)`, "date")
+        .addSelect("COUNT(*)", "orders")
+        .where("order.companyId = :companyId", { companyId })
+        .andWhere("order.createdAt BETWEEN :from AND :to", range)
+        .groupBy(`DATE_TRUNC('day', order.createdAt)`)
+        .orderBy("date", "ASC")
+        .getRawMany<{ date: Date; orders: string }>();
 
-        return raw?.avgMinutes ? Math.round(Number(raw.avgMinutes)) : 0;
+      return raw.map((row) => ({
+        date: row.date.toISOString(),
+        orders: Number(row.orders),
+      }));
+    } catch (err) {
+      this.logger.error(
+        `Failed to compute trend for company ${companyId}`,
+        (err as Error).stack,
+      );
+      return [];
     }
+  }
 
-    private async computeTrend(
-        companyId: string,
-        range: { from: Date; to: Date }
-    ) {
-        const raw = await this.orderRepo
-            .createQueryBuilder("order")
-            .select(`DATE_TRUNC('day', order.createdAt)`, "date")
-            .addSelect("COUNT(*)", "orders")
-            .where("order.companyId = :companyId", { companyId })
-            .andWhere("order.createdAt BETWEEN :from AND :to", range)
-            .groupBy(`DATE_TRUNC('day', order.createdAt)`)
-            .orderBy("date", "ASC")
-            .getRawMany<{ date: Date; orders: string }>();
+  private async computeStatusBreakdown(
+    companyId: string,
+    range: { from: Date; to: Date },
+  ) {
+    try {
+      const raw = await this.orderRepo
+        .createQueryBuilder("order")
+        .select("order.status", "status")
+        .addSelect("COUNT(*)", "count")
+        .where("order.companyId = :companyId", { companyId })
+        .andWhere("order.createdAt BETWEEN :from AND :to", range)
+        .groupBy("order.status")
+        .getRawMany<{ status: OrderStatus; count: string }>();
 
-        return raw.map(row => ({
-            date: row.date.toISOString(),
-            orders: Number(row.orders)
-        }));
+      const counts = new Map(raw.map((r) => [r.status, Number(r.count)]));
+      return Object.values(OrderStatus).map((status) => ({
+        status,
+        count: counts.get(status) ?? 0,
+      }));
+    } catch (err) {
+      this.logger.error(
+        `Failed to compute status breakdown for company ${companyId}`,
+        (err as Error).stack,
+      );
+      return Object.values(OrderStatus).map((status) => ({
+        status,
+        count: 0,
+      }));
     }
+  }
 
-    private async computeStatusBreakdown(
-        companyId: string,
-        range: { from: Date; to: Date }
-    ) {
-        const raw = await this.orderRepo
-            .createQueryBuilder("order")
-            .select("order.status", "status")
-            .addSelect("COUNT(*)", "count")
-            .where("order.companyId = :companyId", { companyId })
-            .andWhere("order.createdAt BETWEEN :from AND :to", range)
-            .groupBy("order.status")
-            .getRawMany<{ status: OrderStatus; count: string }>();
+  private async computeTopDrivers(
+    companyId: string,
+    range: { from: Date; to: Date },
+  ) {
+    try {
+      const raw = await this.tripStopRepo
+        .createQueryBuilder("stop")
+        .innerJoin("stop.trip", "trip")
+        .select("trip.driverUserId", "driverUserId")
+        .addSelect("COUNT(*)", "deliveries")
+        .where("trip.companyId = :companyId", { companyId })
+        .andWhere("stop.status = :status", { status: StopStatus.COMPLETED })
+        .andWhere("stop.completedAt BETWEEN :from AND :to", range)
+        .groupBy("trip.driverUserId")
+        .orderBy("deliveries", "DESC")
+        .limit(5)
+        .getRawMany<{ driverUserId: string; deliveries: string }>();
 
-        const counts = new Map(raw.map(r => [r.status, Number(r.count)]));
-        return Object.values(OrderStatus).map(status => ({
-            status,
-            count: counts.get(status) ?? 0
-        }));
+      const results = await Promise.all(
+        raw.map(async (row) => {
+          const driver = await this.usersService
+            .getUserRole(row.driverUserId, companyId)
+            .catch(() => null);
+          return {
+            id: row.driverUserId,
+            name: driver?.name ?? "Unknown driver",
+            deliveries: Number(row.deliveries),
+          };
+        }),
+      );
+
+      return results;
+    } catch (err) {
+      this.logger.error(
+        `Failed to compute top drivers for company ${companyId}`,
+        (err as Error).stack,
+      );
+      return [];
     }
-
-    private async computeTopDrivers(
-        companyId: string,
-        range: { from: Date; to: Date }
-    ) {
-        const raw = await this.tripStopRepo
-            .createQueryBuilder("stop")
-            .innerJoin("stop.trip", "trip")
-            .select("trip.driverUserId", "driverUserId")
-            .addSelect("COUNT(*)", "deliveries")
-            .where("trip.companyId = :companyId", { companyId })
-            .andWhere("stop.status = :status", { status: StopStatus.COMPLETED })
-            .andWhere("stop.completedAt BETWEEN :from AND :to", range)
-            .groupBy("trip.driverUserId")
-            .orderBy("deliveries", "DESC")
-            .limit(5)
-            .getRawMany<{ driverUserId: string; deliveries: string }>();
-
-        // Driver names live in UserRole, not on Trip/TripStop — same "no
-        // duplicated identity data" discipline used everywhere else in this
-        // build. One extra lookup, not a join, since UserRole isn't related
-        // to Trip at the entity level.
-        const results = await Promise.all(
-            raw.map(async row => {
-                const driver = await this.usersService
-                    .getUserRole(row.driverUserId, companyId)
-                    .catch(() => null);
-                return {
-                    id: row.driverUserId,
-                    name: driver?.name ?? "Unknown driver",
-                    deliveries: Number(row.deliveries)
-                };
-            })
-        );
-
-        return results;
-    }
+  }
 }

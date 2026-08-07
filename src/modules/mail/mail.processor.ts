@@ -1,22 +1,21 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Logger } from '@nestjs/common';
 import type { Job } from 'bullmq';
-import { type EmailProvider, RESEND_EMAIL_PROVIDER, } from './interfaces/email-provider.interface';
+import {
+  type EmailProvider,
+  RESEND_EMAIL_PROVIDER,
+} from './interfaces/email-provider.interface';
 import { MailTemplateService } from './mail-template.service';
 import { MailTemplate } from './interfaces/mail-template.interface';
-import { MAIL_QUEUE_NAME, MailJobName, type SendTemplateEmailJobData, } from './constants/mail-queue.constant';
+import {
+  MAIL_QUEUE_NAME,
+  MailJobName,
+  type SendTemplateEmailJobData,
+} from './constants/mail-queue.constant';
 
-/**
- * The actual sender. Concurrency is capped via @Processor's `concurrency`
- * option below — this is the direct fix for "too many concurrent sends":
- * even if 500 jobs are enqueued at once (e.g. a dispatcher batch-updating
- * many order), only N jobs run at a time, and BullMQ's rate limiter caps
- * how many complete per time window, which is what actually protects
- * against hitting the email provider's own rate limit.
- */
 @Processor(MAIL_QUEUE_NAME, {
   concurrency: 5,
-  limiter: { max: 10, duration: 1000 }, // at most 10 emails/sec — tune to your actual provider plan's limit
+  limiter: { max: 10, duration: 1000 },
 })
 export class MailProcessor extends WorkerHost {
   private readonly logger = new Logger(MailProcessor.name);
@@ -34,18 +33,28 @@ export class MailProcessor extends WorkerHost {
 
     const { to, subject, templateName, context } = job.data;
 
-    const html = this.templateService.render(
-      templateName as MailTemplate,
-      context as never,
-    );
+    try {
+      const html = this.templateService.render(
+        templateName as MailTemplate,
+        context as never,
+      );
 
-    const result = await this.resendEmailProvider.sendEmail({
-      to,
-      subject,
-      html,
-    });
-    this.logger.log(
-      `Sent "${templateName}" to ${to} (provider id: ${result.providerMessageId})`,
-    );
+      const result = await this.resendEmailProvider.sendEmail({
+        to,
+        subject,
+        html,
+      });
+
+      this.logger.log(
+        `Sent "${templateName}" to ${to} (provider id: ${result.providerMessageId})`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to send email "${templateName}" to ${to}: ${err instanceof Error ? err.message : err}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+      // Re‑throw so BullMQ marks the job as failed and applies retry logic
+      throw err;
+    }
   }
 }

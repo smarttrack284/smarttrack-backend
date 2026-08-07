@@ -5,7 +5,7 @@ import {
     Param,
     ParseUUIDPipe,
     Post,
-    UseGuards
+    UseGuards,
 } from "@nestjs/common";
 import { SupabaseAuthGuard } from "#/common/guards/supabase-auth.guard";
 import { PlanGuard } from "#/common/guards/plan.guard";
@@ -16,55 +16,35 @@ import { SubscriptionPlan } from "#/common/constants/subscription-plan.constant"
 import { TeamRoleType } from "#/common/types/team-role.type";
 import { CurrentUser } from "#/common/decorators/current-user.decorator";
 import type { AuthenticatedUser } from "#/common/types/authenticated-user.type";
-import { UsersService } from "#/modules/users/users.service";
 import { ApiKeysService } from "./api-keys.service";
 import { CreateApiKeyDto } from "./dto/create-api-key.dto";
 
-/**
- * Matches the frontend's already-built ApiKeysSection URLs exactly
- * (companies/api-keys, companies/api-keys/:id/revoke), not restructured
- * to a more "correct" REST shape — the frontend was wired against these
- * specific paths, and there's no reason to make it change now that the
- * backend finally exists.
- *
- * Pro-gated AND owner-only, stacked — a key can act on the whole
- * workspace's API surface, so beyond just being a paid feature, only the
- * owner should be able to mint or revoke one, same reasoning that put
- * Billing/Danger Zone behind an owner-only role check in
- * settings-sections.ts.
- */
 @UseGuards(SupabaseAuthGuard, PlanGuard, RolesGuard)
 @RequirePlan(SubscriptionPlan.PRO)
 @Roles(TeamRoleType.OWNER)
 @Controller("companies/api-keys")
 export class ApiKeysController {
-    constructor(
-        private readonly apiKeysService: ApiKeysService,
-        private readonly usersService: UsersService
-    ) {}
+    constructor(private readonly apiKeysService: ApiKeysService) {}
 
     @Post()
     async create(
         @CurrentUser() user: AuthenticatedUser,
-        @Body() dto: CreateApiKeyDto
+        @Body() dto: CreateApiKeyDto,
     ) {
-        const userRole = await this.usersService.getUserRoleByUserId(user.id);
-        return this.apiKeysService.createApiKey(userRole.companyId, dto);
+        return this.apiKeysService.createApiKey(user.companyId!, dto);
     }
 
     @Get()
     async list(@CurrentUser() user: AuthenticatedUser) {
-        const userRole = await this.usersService.getUserRoleByUserId(user.id);
-        return this.apiKeysService.listForCompany(userRole.companyId);
+        return this.apiKeysService.listForCompany(user.companyId!);
     }
 
     @Post(":id/revoke")
     async revoke(
         @CurrentUser() user: AuthenticatedUser,
-        @Param("id", ParseUUIDPipe) id: string
+        @Param("id", ParseUUIDPipe) id: string,
     ) {
-        const userRole = await this.usersService.getUserRoleByUserId(user.id);
-        await this.apiKeysService.revokeApiKey(userRole.companyId, id);
+        await this.apiKeysService.revokeApiKey(user.companyId!, id);
         return { success: true };
     }
 }

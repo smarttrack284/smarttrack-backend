@@ -22,64 +22,99 @@ export class PaystackWebhookHandlerService {
     ) {}
 
     async handle(rawBody: Buffer, signature: string): Promise<void> {
+        // ---------- Signature verification (security boundary) ----------
         const isValid = this.paystackService.verifyWebhookSignature(
             rawBody,
             signature
         );
         if (!isValid) {
-            // Invalid signature — the real security boundary of this endpoint.
-            // Rejected outright, never parsed or processed further.
             this.logger.warn("Rejected Paystack webhook: invalid signature");
             throw new UnauthorizedAppException("Invalid webhook signature");
         }
 
+        // ---------- Parse & process ----------
         let event: PaystackWebhookEvent;
         try {
             event = JSON.parse(rawBody.toString("utf-8"));
         } catch {
             this.logger.warn("Rejected Paystack webhook: malformed JSON body");
-            return;
+            return; // 200 OK – prevents retries on an unparseable payload
         }
 
+        // Each event handler is wrapped individually so a failure in one
+        // never affects another, and we ALWAYS return 200 OK to Paystack.
         switch (event.event) {
-            case "charge.success":
-                await this.handleChargeSuccess(event.data);
-                break;
-            case "subscription.create":
-                await this.handleSubscriptionCreate(event.data);
-                break;
-            case "subscription.disable":
-            case "subscription.not_renew":
-                await this.subscriptionsService.downgradeToFreeOnCancellation(
-                    event.data.subscription_code
-                );
-                break;
-            case "invoice.payment_failed":
-                await this.handleInvoicePaymentFailed(event.data);
-                break;
-            default:
-                this.logger.log(`Ignored Paystack event: ${event.event}`);
-        }
+  case "charge.success":
+    await this.safeHandle("charge.success", () =>
+      this.handleChargeSuccess(event.data),
+    );
+    break;
+
+  case "subscription.create":
+    await this.safeHandle("subscription.create", () =>
+      this.handleSubscriptionCreate(event.data),
+    );
+    break;
+
+  case "subscription.renew":
+    // A successful recurring charge — update the period end & ensure active
+    await this.safeHandle("subscription.renew", () =>
+      this.handleSubscriptionRenew(event.data),
+    );
+    break;
+
+  case "subscription.disable":
+  case "subscription.not_renew":
+    await this.safeHandle(event.event, () =>
+      this.subscriptionsService.downgradeToFreeOnCancellation(
+        event.data.subscription_code,
+      ),
+    );
+    break;
+
+  case "subscription.expire":
+    await this.safeHandle("subscription.expire", () =>
+      this.handleSubscriptionExpire(event.data),
+    );
+    break;
+
+  case "invoice.payment_failed":
+    await this.safeHandle("invoice.payment_failed", () =>
+      this.handleInvoicePaymentFailed(event.data),
+    );
+    break;
+
+  default:
+    this.logger.log(`Ignored Paystack event: ${event.event}`);
+}
     }
 
     /**
-     * charge.success fires for the initial checkout AND every subsequent
-     * renewal charge. metadata (companyId, plan) is only present on the
-     * FIRST charge (the one initializeTransaction created) — renewal
-     * charges triggered by Paystack itself won't carry it, since they're
-     * not initiated through our own initializeTransaction call. This
-     * handler is a no-op for renewals; subscription.create (below) is what
-     * actually activates the plan for a NEW subscription.
+     * Runs the handler callback, logs any error, and NEVER re‑throws.
+     * This guarantees a 200 OK response to Paystack regardless of
+     * downstream failures, preventing webhook retries.
      */
+    private async safeHandle(
+        eventName: string,
+        handler: () => Promise<void>
+    ): Promise<void> {
+        try {
+            await handler();
+        } catch (err) {
+            this.logger.error(
+                `Paystack webhook handler failed for event "${eventName}"`,
+                (err as Error).stack
+            );
+            // Intentionally swallowed – prevents retries from Paystack
+        }
+    }
+
     private async handleChargeSuccess(
         data: Record<string, any>
     ): Promise<void> {
         const companyId = data.metadata?.companyId;
-        if (!companyId) return; // a renewal charge, not the initial checkout — nothing to do here
-        // Verified separately via subscription.create, which carries the
-        // authoritative subscription_code — this handler intentionally does
-        // NOT activate the plan itself, to avoid a race between two events
-        // both trying to be the "source of truth" for activation.
+        if (!companyId) return; // renewal charge, no action needed
+        // The plan activation is deferred to the "subscription.create" event
     }
 
     private async handleSubscriptionCreate(
@@ -114,6 +149,64 @@ export class PaystackWebhookHandlerService {
         await this.subscriptionsService.markPastDue(subscriptionCode);
     }
 
+    /**
+     * Fires on every successful recurring charge.  Update the period end
+     * so the dashboard always shows the real next payment date, and ensure
+     * the subscription is marked ACTIVE (recovery from a previous PAST_DUE).
+     */
+    private async handleSubscriptionRenew(
+        data: Record<string, any>
+    ): Promise<void> {
+        const subscriptionCode = data.subscription_code;
+        if (!subscriptionCode) return;
+
+        // Refresh from Paystack to get authoritative current period end
+        const ps =
+            await this.paystackService.fetchSubscription(subscriptionCode);
+        if (!ps) return;
+
+        const sub =
+            await this.subscriptionsService.getByPaystackSubscriptionCode(
+                subscriptionCode
+            );
+        if (!sub) return;
+
+        sub.status = SubscriptionStatus.ACTIVE;
+        sub.currentPeriodEnd = new Date(ps.next_payment_date);
+        await this.subscriptionsService.save(sub);
+    }
+
+    /**
+     * Fires when the subscription reaches its end date without renewal.
+     * Downgrade to FREE immediately — the user should not retain paid
+     * features after the subscription has lapsed.
+     */
+    private async handleSubscriptionExpire(
+        data: Record<string, any>
+    ): Promise<void> {
+        const subscriptionCode = data.subscription_code;
+        if (!subscriptionCode) return;
+
+        const sub =
+            await this.subscriptionsService.getByPaystackSubscriptionCode(
+                subscriptionCode
+            );
+        if (!sub) return;
+
+        sub.plan = SubscriptionPlan.FREE;
+        sub.status = SubscriptionStatus.CANCELED;
+        await this.subscriptionsService.save(sub);
+
+        this.logger.log(
+            `Subscription ${subscriptionCode} expired — downgraded company ${sub.companyId} to FREE`
+        );
+    }
+
+    /**
+     * Maps a Paystack plan code to our internal SubscriptionPlan.
+     * Returns `null` if the plan code is unrecognised or missing,
+     * which causes the subscription.create handler to skip the event.
+     */
     private mapPlanCodeToPlan(
         planCode: string | undefined
     ): SubscriptionPlan | null {

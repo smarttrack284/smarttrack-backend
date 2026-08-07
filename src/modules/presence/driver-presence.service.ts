@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { EventEmitter2 } from "@nestjs/event-emitter";
 import Redis from "ioredis";
@@ -6,31 +6,21 @@ import { DriverPresenceStatus } from "#/common/constants/driver-presence.constan
 import {
     DRIVER_PRESENCE_EVENTS,
     DriverOnlineEvent,
-    DriverOfflineEvent
+    DriverOfflineEvent,
 } from "#/common/events/driver-presence.events";
 
-const PRESENCE_TTL_SECONDS = 90; // heartbeat safety net — a connection that stops heartbeating without a clean disconnect self-expires rather than showing "online" forever
-const OFFLINE_GRACE_MS = 15_000; // a brief disconnect (tunnel, app backgrounded) within this window is NOT reported as offline — only a disconnect that isn't followed by a reconnect within this window is real
+const PRESENCE_TTL_SECONDS = 90;
+const OFFLINE_GRACE_MS = 15_000;
 
 export type PresenceRecord = {
     status: DriverPresenceStatus;
     lastSeenAt: string;
 };
 
-/**
- * Presence is deliberately Redis-only, not a Postgres column — this is
- * transient runtime/connection state, not a durable business record,
- * same reasoning as OrdersSubscriptionRegistry/TripsSubscriptionRegistry.
- * A server restart or Redis flush losing presence state is acceptable
- * (drivers just reconnect and go back online); losing it should never
- * be treated as data loss the way losing an order or a delivery record
- * would be.
- */
 @Injectable()
 export class DriverPresenceService {
+    private readonly logger = new Logger(DriverPresenceService.name);
     private readonly redis: Redis;
-    // Pending "go offline" timers, keyed by driverUserId — cancelled if a
-    // reconnect/heartbeat arrives before the grace period elapses.
     private readonly pendingOffline = new Map<
         string,
         ReturnType<typeof setTimeout>
@@ -38,121 +28,168 @@ export class DriverPresenceService {
 
     constructor(
         config: ConfigService,
-        private readonly events: EventEmitter2
+        private readonly events: EventEmitter2,
     ) {
         const redisUrl = config.get<string>("REDIS_URL");
         if (!redisUrl) throw new Error("REDIS_URL is not configured");
         this.redis = new Redis(redisUrl);
+
+        // Log Redis connection errors so they don't go unnoticed
+        this.redis.on("error", (err) => {
+            this.logger.error("Redis connection error", err.stack);
+        });
     }
 
     async setOnline(
         companyId: string,
         driverUserId: string,
-        driverName: string
+        driverName: string,
     ): Promise<void> {
+        // Cancel any pending offline timer — this is a reconnect within the grace window
         const pending = this.pendingOffline.get(driverUserId);
         if (pending) {
             clearTimeout(pending);
             this.pendingOffline.delete(driverUserId);
-            return; // this was a reconnect within the grace window — never actually went offline, no event to fire
+            return;
         }
 
-        const wasAlreadyOnline = await this.isOnline(companyId, driverUserId);
-        await this.writeRecord(
-            companyId,
-            driverUserId,
-            DriverPresenceStatus.ONLINE
-        );
-
-        if (!wasAlreadyOnline) {
-            this.events.emit(
-                DRIVER_PRESENCE_EVENTS.ONLINE,
-                new DriverOnlineEvent(companyId, driverUserId, driverName)
+        try {
+            const wasAlreadyOnline = await this.isOnline(companyId, driverUserId);
+            await this.writeRecord(
+                companyId,
+                driverUserId,
+                DriverPresenceStatus.ONLINE,
             );
+
+            if (!wasAlreadyOnline) {
+                this.events.emit(
+                    DRIVER_PRESENCE_EVENTS.ONLINE,
+                    new DriverOnlineEvent(companyId, driverUserId, driverName),
+                );
+            }
+        } catch (err) {
+            this.logger.error(
+                `Failed to set driver ${driverUserId} online for company ${companyId}`,
+                (err as Error).stack,
+            );
+            // Rethrow so the gateway can respond appropriately (e.g., disconnect the socket)
+            throw err;
         }
     }
 
-    /** Refreshes the TTL without changing status or firing events — called on a periodic heartbeat from a connected driver socket. */
     async heartbeat(companyId: string, driverUserId: string): Promise<void> {
-        const key = this.presenceKey(companyId, driverUserId);
-        const exists = await this.redis.exists(key);
-        if (exists) await this.redis.expire(key, PRESENCE_TTL_SECONDS);
+        try {
+            const key = this.presenceKey(companyId, driverUserId);
+            const exists = await this.redis.exists(key);
+            if (exists) await this.redis.expire(key, PRESENCE_TTL_SECONDS);
+        } catch (err) {
+            this.logger.error(
+                `Heartbeat failed for driver ${driverUserId} in company ${companyId}`,
+                (err as Error).stack,
+            );
+            // No rethrow – heartbeat failure shouldn’t break the socket loop
+        }
     }
 
-    /**
-     * Schedules a debounced "go offline" — does NOT flip status
-     * immediately. Real disconnect only registers if no reconnect/heartbeat
-     * cancels this within OFFLINE_GRACE_MS, which is what prevents brief
-     * network blips from flapping a driver's availability (and therefore
-     * dispatch eligibility) on and off.
-     */
     scheduleOffline(
         companyId: string,
         driverUserId: string,
         driverName: string,
-        hasActiveStops: () => Promise<boolean>
+        hasActiveStops: () => Promise<boolean>,
     ): void {
         const timeout = setTimeout(async () => {
             this.pendingOffline.delete(driverUserId);
-            await this.deleteRecord(companyId, driverUserId);
-            const hadActiveStops = await hasActiveStops();
-            this.events.emit(
-                DRIVER_PRESENCE_EVENTS.OFFLINE,
-                new DriverOfflineEvent(
-                    companyId,
-                    driverUserId,
-                    driverName,
-                    hadActiveStops
-                )
-            );
+            try {
+                await this.deleteRecord(companyId, driverUserId);
+                const hadActiveStops = await hasActiveStops();
+                this.events.emit(
+                    DRIVER_PRESENCE_EVENTS.OFFLINE,
+                    new DriverOfflineEvent(
+                        companyId,
+                        driverUserId,
+                        driverName,
+                        hadActiveStops,
+                    ),
+                );
+            } catch (err) {
+                this.logger.error(
+                    `Failed to process offline for driver ${driverUserId} in company ${companyId}`,
+                    (err as Error).stack,
+                );
+                // No further action – event will be lost, but the TTL will eventually clean up
+            }
         }, OFFLINE_GRACE_MS);
 
         this.pendingOffline.set(driverUserId, timeout);
     }
 
     async isOnline(companyId: string, driverUserId: string): Promise<boolean> {
-        const record = await this.getRecord(companyId, driverUserId);
-        return record?.status === DriverPresenceStatus.ONLINE;
+        try {
+            const record = await this.getRecord(companyId, driverUserId);
+            return record?.status === DriverPresenceStatus.ONLINE;
+        } catch (err) {
+            // If we can't check, assume offline – safe fallback
+            this.logger.error(
+                `Failed to check online status for driver ${driverUserId} in company ${companyId}`,
+                (err as Error).stack,
+            );
+            return false;
+        }
     }
 
     async getRecord(
         companyId: string,
-        driverUserId: string
+        driverUserId: string,
     ): Promise<PresenceRecord | null> {
-        const raw = await this.redis.get(
-            this.presenceKey(companyId, driverUserId)
-        );
-        return raw ? JSON.parse(raw) : null;
+        try {
+            const raw = await this.redis.get(
+                this.presenceKey(companyId, driverUserId),
+            );
+            return raw ? JSON.parse(raw) : null;
+        } catch (err) {
+            this.logger.error(
+                `Failed to get presence record for driver ${driverUserId} in company ${companyId}`,
+                (err as Error).stack,
+            );
+            return null; // safe fallback
+        }
     }
 
-    /** All currently-online driver user IDs for a company — the actual thing TeamService.listAvailableDrivers needs to intersect against. */
     async listOnlineDriverIds(companyId: string): Promise<Set<string>> {
-        const keys = await this.redis.keys(this.presenceKey(companyId, "*"));
-        if (keys.length === 0) return new Set();
-        const ids = keys.map(key => key.split(":").pop()!);
-        return new Set(ids);
+        try {
+            const keys = await this.redis.keys(this.presenceKey(companyId, "*"));
+            if (keys.length === 0) return new Set();
+            const ids = keys.map((key) => key.split(":").pop()!);
+            return new Set(ids);
+        } catch (err) {
+            this.logger.error(
+                `Failed to list online drivers for company ${companyId}`,
+                (err as Error).stack,
+            );
+            return new Set(); // no drivers will be returned (safe)
+        }
     }
 
     private async writeRecord(
         companyId: string,
         driverUserId: string,
-        status: DriverPresenceStatus
+        status: DriverPresenceStatus,
     ): Promise<void> {
         const record: PresenceRecord = {
             status,
-            lastSeenAt: new Date().toISOString()
+            lastSeenAt: new Date().toISOString(),
         };
         await this.redis.set(
             this.presenceKey(companyId, driverUserId),
             JSON.stringify(record),
             "EX",
-            PRESENCE_TTL_SECONDS
+            PRESENCE_TTL_SECONDS,
         );
     }
 
     private async deleteRecord(
         companyId: string,
-        driverUserId: string
+        driverUserId: string,
     ): Promise<void> {
         await this.redis.del(this.presenceKey(companyId, driverUserId));
     }
