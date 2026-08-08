@@ -176,7 +176,8 @@ export class ActivityLogService {
             companyId: event.companyId,
             category: ActivityCategory.DRIVER,
             eventType: "driver.arrived",
-            message: `Arrived — ${event.customerName} (#${event.orderReference})`
+            message: `Arrived — ${event.customerName}
+            (#${event.orderReference}), arrived on ${event.arrivedAt}`
         });
     }
 

@@ -1,10 +1,18 @@
-import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn, } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 import { WebhookEndpoint } from './webhook-endpoint.entity';
 import { WebhookEventType } from '#/common/constants/webhook-event.constant';
 import { WebhookDeliveryStatus } from '#/common/constants/webhook-delivery-status.constant';
 
-/** One row per delivery ATTEMPT, not per event — a retried delivery gets a new row referencing the same eventId, so the full attempt history is visible, same pattern Stripe/GitHub use for webhook delivery logs. */
 @Entity('webhook_deliveries')
+// Composite index for per-endpoint delivery listings
 @Index(['webhookEndpointId', 'createdAt'])
 export class WebhookDelivery {
   @PrimaryGeneratedColumn('uuid')
@@ -17,7 +25,6 @@ export class WebhookDelivery {
   @JoinColumn({ name: 'webhook_endpoint_id' })
   webhookEndpoint: WebhookEndpoint;
 
-  /** Groups retry attempts for the same logical event — all attempts for one event share this ID, only the row itself differs per attempt. */
   @Column({ name: 'event_id', type: 'uuid' })
   @Index()
   eventId: string;
@@ -41,7 +48,6 @@ export class WebhookDelivery {
   @Column({ name: 'http_status_code', type: 'int', nullable: true })
   httpStatusCode: number | null;
 
-  /** Truncated — never store an unbounded response body from an external server. */
   @Column({
     name: 'response_body',
     type: 'varchar',
@@ -58,6 +64,8 @@ export class WebhookDelivery {
   })
   errorMessage: string | null;
 
+  // Simple index for cleanup service (WHERE createdAt < cutoff)
+  @Index()
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

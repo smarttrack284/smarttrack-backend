@@ -1,21 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
-import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Repository } from 'typeorm';
-import { WebhookDelivery } from '#/common/entities/webhook-delivery.entity';
+import { Injectable, Logger } from "@nestjs/common";
+import { Cron, CronExpression } from "@nestjs/schedule";
+import { InjectRepository } from "@nestjs/typeorm";
+import { LessThan, Repository } from "typeorm";
+import { WebhookDelivery } from "#/common/entities/webhook-delivery.entity";
 
 const RETENTION_DAYS = 30;
+const BATCH_SIZE = 2000;
+const MAX_EXECUTION_MS = 10 * 60 * 1000; // 10 minutes – stops if it takes longer
 
-/**
- * Runs once daily. Deletes delivery log rows older than RETENTION_DAYS —
- * these are an operational audit trail (for the "delivery history" UI
- * and manual retry), not billing/compliance records, so a rolling window
- * is the right model rather than keeping them forever. 30 days is a
- * reasonable default for "did my integration miss something recently";
- */
 @Injectable()
 export class WebhookDeliveryCleanupService {
   private readonly logger = new Logger(WebhookDeliveryCleanupService.name);
+  private running = false; // prevent overlapping executions
 
   constructor(
     @InjectRepository(WebhookDelivery)
@@ -24,22 +20,50 @@ export class WebhookDeliveryCleanupService {
 
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
   async pruneOldDeliveries(): Promise<void> {
+    // Avoid overlapping runs (safety net)
+    if (this.running) {
+      this.logger.warn("Previous cleanup job still running – skipping this cycle.");
+      return;
+    }
+
+    this.running = true;
+    const startTime = Date.now();
     const cutoff = new Date(Date.now() - RETENTION_DAYS * 86_400_000);
-
-    // Deleted in batches, not one unbounded DELETE — a single huge delete
-    // on a large table can hold a long-running lock and bloat the
-    // transaction log. Looping in chunks keeps each transaction small.
     let totalDeleted = 0;
-    while (true) {
-      const batch = await this.deliveryRepo.find({
-        where: { createdAt: LessThan(cutoff) },
-        select: {'id': true},
-        take: 1000,
-      });
-      if (batch.length === 0) break;
 
-      await this.deliveryRepo.delete(batch.map((row) => row.id));
-      totalDeleted += batch.length;
+    try {
+      while (true) {
+        // Enforce timeout – break out if we’re close to MAX_EXECUTION_MS
+        if (Date.now() - startTime > MAX_EXECUTION_MS) {
+          this.logger.warn(
+            `Cleanup job exceeded ${MAX_EXECUTION_MS}ms – pausing until next run. Deleted ${totalDeleted} rows so far.`,
+          );
+          break;
+        }
+
+        // Safe batch: find IDs first, then delete (works on PostgreSQL)
+        const batch = await this.deliveryRepo.find({
+          where: { createdAt: LessThan(cutoff) },
+          select: { id: true },
+          take: BATCH_SIZE,
+          order: { createdAt: "ASC" }, // oldest first
+        });
+
+        if (batch.length === 0) break;
+
+        await this.deliveryRepo.delete(batch.map((row) => row.id));
+        totalDeleted += batch.length;
+
+        this.logger.debug(`Deleted batch of ${batch.length} old deliveries.`);
+      }
+    } catch (err) {
+      this.logger.error(
+        `Error while pruning webhook deliveries. Total deleted before failure: ${totalDeleted}`,
+        (err as Error).stack,
+      );
+      // Continue – next run will handle remaining rows
+    } finally {
+      this.running = false;
     }
 
     if (totalDeleted > 0) {

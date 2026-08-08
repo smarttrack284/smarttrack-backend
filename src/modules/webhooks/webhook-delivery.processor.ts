@@ -6,19 +6,25 @@ import type { Job } from 'bullmq';
 import { WebhookEndpoint } from '#/common/entities/webhook-endpoint.entity';
 import { WebhookDelivery } from '#/common/entities/webhook-delivery.entity';
 import { WebhookDeliveryStatus } from '#/common/constants/webhook-delivery-status.constant';
-import { computeWebhookSignature, decryptWebhookSecret, } from '#/common/utils/webhook-secret.util';
-import { type DeliverWebhookJobData, WEBHOOK_QUEUE_NAME, WebhookJobName, } from './constants/webhook-queue.constant';
+import {
+  computeWebhookSignature,
+  decryptWebhookSecret,
+} from '#/common/utils/webhook-secret.util';
+import {
+  type DeliverWebhookJobData,
+  WEBHOOK_QUEUE_NAME,
+  WebhookJobName,
+} from './constants/webhook-queue.constant';
 import { Agent, fetch as undiciFetch } from 'undici';
-import { resolveAndValidateWebhookHost, WebhookHostBlockedError, } from '#/common/utils/resolve-webhook-host.util';
+import {
+  resolveAndValidateWebhookHost,
+  WebhookHostBlockedError,
+} from '#/common/utils/resolve-webhook-host.util';
+import { isIP } from 'node:net';
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_BODY_CHARS = 1000;
 
-/**
- * Concurrency capped so a burst of events (e.g. bulk CSV import) can't
- * spawn hundreds of simultaneous outbound HTTP calls at once — same
- * reasoning as MailProcessor's concurrency cap.
- */
 @Processor(WEBHOOK_QUEUE_NAME, { concurrency: 10 })
 export class WebhookDeliveryProcessor extends WorkerHost {
   private readonly logger = new Logger(WebhookDeliveryProcessor.name);
@@ -34,15 +40,30 @@ export class WebhookDeliveryProcessor extends WorkerHost {
 
   async process(job: Job<DeliverWebhookJobData>): Promise<void> {
     if (job.name !== WebhookJobName.DELIVER) return;
+
     const { webhookEndpointId, eventId, eventType, payload, attemptNumber } =
       job.data;
 
-    const endpoint = await this.endpointRepo.findOne({
-      where: { id: webhookEndpointId },
-    });
-    // Endpoint deleted/deactivated between enqueue and processing — nothing to deliver to.
-    if (!endpoint || !endpoint.isActive) return;
+    // ---------- 1. Load endpoint ----------
+    let endpoint: WebhookEndpoint | null;
+    try {
+      endpoint = await this.endpointRepo.findOne({
+        where: { id: webhookEndpointId },
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to load endpoint ${webhookEndpointId} – retrying later`,
+        (err as Error).stack,
+      );
+      throw err; // transient DB error – retry
+    }
 
+    if (!endpoint || !endpoint.isActive) {
+      this.logger.log(`Endpoint ${webhookEndpointId} is gone or inactive – job skipped`);
+      return;
+    }
+
+    // ---------- 2. Create delivery record ----------
     const deliveryRow = this.deliveryRepo.create({
       webhookEndpointId,
       eventId,
@@ -51,8 +72,17 @@ export class WebhookDeliveryProcessor extends WorkerHost {
       attemptNumber,
       status: WebhookDeliveryStatus.PENDING,
     });
-    await this.deliveryRepo.save(deliveryRow);
+    try {
+      await this.deliveryRepo.save(deliveryRow);
+    } catch (err) {
+      this.logger.error(
+        `Failed to insert delivery row for event ${eventId} – retrying`,
+        (err as Error).stack,
+      );
+      throw err;
+    }
 
+    // ---------- 3. Prepare signature ----------
     const rawBody = JSON.stringify({
       id: eventId,
       type: eventType,
@@ -60,9 +90,23 @@ export class WebhookDeliveryProcessor extends WorkerHost {
       createdAt: new Date().toISOString(),
     });
     const timestamp = Math.floor(Date.now() / 1000);
-    const secret = decryptWebhookSecret(endpoint.secretEncrypted);
+    let secret: string;
+    try {
+      secret = decryptWebhookSecret(endpoint.secretEncrypted);
+    } catch (err) {
+      // Corrupted secret – permanent failure, no retries
+      deliveryRow.status = WebhookDeliveryStatus.FAILED;
+      deliveryRow.errorMessage = 'Webhook secret is corrupted – cannot sign request';
+      await this.deliveryRepo.save(deliveryRow).catch(() => {});
+      this.logger.error(
+        `Decryption failed for endpoint ${webhookEndpointId} – permanent failure`,
+        (err as Error).stack,
+      );
+      return;
+    }
     const signature = computeWebhookSignature(secret, timestamp, rawBody);
 
+    // ---------- 4. DNS resolution & pinning ----------
     const targetUrl = new URL(endpoint.url);
     let resolvedIp: string;
     try {
@@ -71,32 +115,30 @@ export class WebhookDeliveryProcessor extends WorkerHost {
       if (err instanceof WebhookHostBlockedError) {
         deliveryRow.status = WebhookDeliveryStatus.FAILED;
         deliveryRow.errorMessage = err.message;
-        await this.deliveryRepo.save(deliveryRow);
+        await this.deliveryRepo.save(deliveryRow).catch(() => {});
         this.logger.warn(
           `Blocked webhook delivery to ${webhookEndpointId}: ${err.message}`,
         );
-        return; // do NOT throw — this must never trigger a retry, the target is unsafe by design, retrying won't fix that
+        return; // no retry
       }
+      // Unresolvable host – transient, retry later
+      this.logger.warn(
+        `Could not resolve host for endpoint ${webhookEndpointId} – will retry`,
+      );
       throw err;
     }
 
-    // Pin the connection to the exact IP we just validated, via a custom
-    // lookup function on undici's Agent — this is what prevents a SECOND,
-    // independent DNS resolution from happening at actual connect time
-    // (which is exactly where the rebinding race would otherwise reopen).
+    // Pin IP – use isIP to correctly determine address family
+    const family = isIP(resolvedIp) === 6 ? 6 : 4;
     const pinnedAgent = new Agent({
       connect: {
         lookup: (_hostname, _opts, callback) => {
-          callback(null, [
-            {
-              address: resolvedIp,
-              family: targetUrl.hostname.includes(':') ? 6 : 4,
-            },
-          ]);
+          callback(null, [{ address: resolvedIp, family }]);
         },
       },
     });
 
+    // ---------- 5. Perform HTTP request ----------
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -126,20 +168,18 @@ export class WebhookDeliveryProcessor extends WorkerHost {
       await this.deliveryRepo.save(deliveryRow);
 
       if (!success) {
-        // Throwing lets BullMQ's own attempts/backoff config (set on the
-        // job in WebhooksDispatcherService) drive retries — this
-        // processor doesn't re-implement retry scheduling itself.
+        // Non‑2xx – retry via BullMQ
         throw new Error(`Webhook endpoint responded with status ${res.status}`);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Delivery failed';
       deliveryRow.status = WebhookDeliveryStatus.FAILED;
       deliveryRow.errorMessage = message.slice(0, 500);
-      await this.deliveryRepo.save(deliveryRow);
+      await this.deliveryRepo.save(deliveryRow).catch(() => {});
       this.logger.warn(
         `Webhook delivery failed for endpoint ${webhookEndpointId}: ${message}`,
       );
-      throw err;
+      throw err; // trigger BullMQ retry
     } finally {
       clearTimeout(timeout);
     }

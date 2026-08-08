@@ -397,7 +397,8 @@ export class DispatchService {
                 new StopArrivedEvent(
                     companyId,
                     savedStop.order.orderReference,
-                    savedStop.order.customerName
+                    savedStop.order.customerName,
+                    savedStop.arrivedAt
                 )
             );
             await this.trackingService.broadcastTripUpdate(tripId);
@@ -566,7 +567,12 @@ export class DispatchService {
                 new StopCompletedEvent(
                     companyId,
                     savedStop.order.orderReference,
-                    savedStop.order.customerName
+                    savedStop.order.customerName,
+                    savedStop.podMethod,
+                    savedStop.podPhotoUrl,
+                    savedStop.podSignatureUrl,
+                    savedStop.podNotes,
+                    savedStop.podCapturedAt
                 )
             );
 
@@ -713,7 +719,8 @@ export class DispatchService {
                     companyId,
                     savedStop.order.orderReference,
                     savedStop.order.customerName,
-                    dto.reason
+                    dto.reason,
+                    dto.note,
                 )
             );
             await this.trackingService.broadcastTripUpdate(tripId);

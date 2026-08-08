@@ -19,14 +19,6 @@ import {
 } from "#/common/events/team.events";
 import { WebhooksService } from "./webhooks.service";
 
-/**
- * Translates the app's INTERNAL domain events (used for caching,
- * activity logging, socket broadcasts — implementation details that can
- * change) into the STABLE, versioned public webhook catalog
- * (WebhookEventType). Keeping these separate means renaming or
- * restructuring an internal event never breaks an external integrator's
- * webhook payload shape.
- */
 @Injectable()
 export class WebhooksDispatcherService {
     constructor(private readonly webhooksService: WebhooksService) {}
@@ -37,43 +29,47 @@ export class WebhooksDispatcherService {
             event.payload.companyId,
             WebhookEventType.ORDER_CREATED,
             {
-                companyId: event.payload.companyId
+                orderReference: event.payload.orderReference,
+                customerName: event.payload.customerName,
+                status: event.payload.statusLabel,
+                companyId: event.payload.companyId,
+                trackingUrl: event.payload.trackingUrl
             }
         );
     }
 
     @OnEvent(ORDER_EVENTS.STATUS_CHANGED)
     handleOrderStatusChanged(event: OrderStatusChangedEvent) {
-      
-              if (event.payload.currentStatus === OrderStatus.DELIVERED) {
-            void this.webhooksService.enqueueDeliveriesForEvent(
-                event.payload.companyId,
-                WebhookEventType.ORDER_DELIVERED,
-                {
-                    orderId: event.payload.orderId
-                }
-            );
-        }
-        if (event.payload.currentStatus === OrderStatus.FAILED) {
-            void this.webhooksService.enqueueDeliveriesForEvent(
-                event.payload.companyId,
-                WebhookEventType.ORDER_FAILED,
-                {
-                    orderId: event.payload.orderId
-                }
-            );
-        }
+        const basePayload = {
+            orderReference: event.payload.orderReference,
+            fromStatus: event.payload.previousStatus,
+            toStatus: event.payload.currentStatus,
+            statusLabel: event.payload.statusLabel,
+            updatedBy: event.payload.updatedBy,
+            companyId: event.payload.companyId
+        };
+
+        // Always fire the generic status-changed event
         void this.webhooksService.enqueueDeliveriesForEvent(
             event.payload.companyId,
             WebhookEventType.ORDER_STATUS_CHANGED,
-            {
-                orderId: event.payload.orderId,
-                fromStatus: event.payload.previousStatus,
-                toStatus: event.payload.currentStatus
-            }
+            basePayload
         );
 
-
+        // Also fire specific lifecycle events for important statuses
+        if (event.payload.currentStatus === OrderStatus.DELIVERED) {
+            void this.webhooksService.enqueueDeliveriesForEvent(
+                event.payload.companyId,
+                WebhookEventType.ORDER_DELIVERED,
+                basePayload
+            );
+        } else if (event.payload.currentStatus === OrderStatus.FAILED) {
+            void this.webhooksService.enqueueDeliveriesForEvent(
+                event.payload.companyId,
+                WebhookEventType.ORDER_FAILED,
+                basePayload
+            );
+        }
     }
 
     @OnEvent(STOP_EVENTS.ARRIVED)
@@ -83,7 +79,8 @@ export class WebhooksDispatcherService {
             WebhookEventType.STOP_ARRIVED,
             {
                 orderReference: event.orderReference,
-                customerName: event.customerName
+                customerName: event.customerName,
+                arrivedAt: event.arrivedAt
             }
         );
     }
@@ -95,7 +92,12 @@ export class WebhooksDispatcherService {
             WebhookEventType.STOP_COMPLETED,
             {
                 orderReference: event.orderReference,
-                customerName: event.customerName
+                customerName: event.customerName,
+                podMethod: event.podMethod,
+                podpodPhotoUrl: event.podPhotoUrl,
+                podSignatureUrl: event.podSignatureUrl,
+                podNotes: event.podNotes,
+                podCapturedAt: event.podCapturedAt
             }
         );
     }
@@ -108,7 +110,8 @@ export class WebhooksDispatcherService {
             {
                 orderReference: event.orderReference,
                 customerName: event.customerName,
-                reason: event.reason
+                reason: event.reason,
+                notes: event.notes,
             }
         );
     }
@@ -119,7 +122,10 @@ export class WebhooksDispatcherService {
             event.payload.companyId,
             WebhookEventType.TEAM_MEMBER_ACCEPTED,
             {
-                name: event.payload.memberName
+                memberName: event.payload.memberName,
+                memberEmail: event.payload.memberEmail,
+                role: event.payload.roleLabel,
+                companyName: event.payload.companyName
             }
         );
     }

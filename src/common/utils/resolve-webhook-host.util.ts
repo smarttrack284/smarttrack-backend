@@ -1,36 +1,55 @@
-import { lookup } from 'node:dns/promises';
+import { resolve4, resolve6 } from 'node:dns/promises';
 import { isBlockedIpAddress } from './webhook-url-validator.util';
 
-export class WebhookHostBlockedError extends Error {}
+export class WebhookHostBlockedError extends Error {
+  constructor(message: string, public readonly reason: 'blocked' | 'unresolvable') {
+    super(message);
+    this.name = 'WebhookHostBlockedError';
+  }
+}
 
 /**
- * Resolves the webhook URL's hostname to a real IP RIGHT NOW, checks that
- * specific resolved IP against the private-range blocklist, and returns
- * it. This is what closes the DNS-rebinding gap: creation-time validation
- * only ever sees whatever the hostname resolved to AT THAT MOMENT — an
- * attacker can point the domain at a public IP during validation, then
- * repoint it at 127.0.0.1 by the time delivery actually fires. Resolving
- * fresh, at the moment of delivery, and pinning the request to exactly
- * that IP (see webhook-delivery.processor.ts's dispatcher) means there's
- * no window between "check" and "use" for the DNS record to change.
+ * Resolves the hostname to ALL IPv4 and IPv6 addresses via DNS,
+ * then checks each one against the private‑range blocklist.
+ *
+ * Returns a single IP that will be used to pin the request.
+ *
+ * Throws `WebhookHostBlockedError` if any resolved address is private or
+ * if the hostname could not be resolved at all.
  */
-export async function resolveAndValidateWebhookHost(
-  hostname: string,
-): Promise<string> {
-  let resolved: { address: string };
-  try {
-    resolved = await lookup(hostname);
-  } catch {
+export async function resolveAndValidateWebhookHost(hostname: string): Promise<string> {
+  // Resolve both IPv4 and IPv6 in parallel (no TTL needed)
+  const [ipv4, ipv6] = await Promise.allSettled([
+    resolve4(hostname),
+    resolve6(hostname),
+  ]);
+
+  const allAddresses: string[] = [];
+
+  if (ipv4.status === 'fulfilled') {
+    allAddresses.push(...ipv4.value);
+  }
+  if (ipv6.status === 'fulfilled') {
+    allAddresses.push(...ipv6.value);
+  }
+
+  if (allAddresses.length === 0) {
     throw new WebhookHostBlockedError(
       `Could not resolve hostname "${hostname}"`,
+      'unresolvable',
     );
   }
 
-  if (isBlockedIpAddress(resolved.address)) {
-    throw new WebhookHostBlockedError(
-      `Resolved address for "${hostname}" is a private or reserved IP`,
-    );
+  // If ANY resolved address is private, block the entire host
+  for (const addr of allAddresses) {
+    if (isBlockedIpAddress(addr)) {
+      throw new WebhookHostBlockedError(
+        `Resolved address ${addr} for "${hostname}" is a private or reserved IP`,
+        'blocked',
+      );
+    }
   }
 
-  return resolved.address;
+  // Return the first public IPv4 (preferred) or IPv6
+  return allAddresses[0];
 }
