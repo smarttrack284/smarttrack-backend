@@ -12,7 +12,7 @@ export class TripsEmitterService {
 
   emitToSocket(socketId: string, event: string, payload: unknown): void {
     if (!this.server) {
-      this.logger.warn('Emit attempted before gateway initialized — dropped');
+      this.logger.warn({msg:'Emit attempted before gateway initialized — dropped'});
       return;
     }
     this.server.to(socketId).emit(event, payload);

@@ -41,9 +41,11 @@ export class MailTemplateService {
       return compiled;
     } catch (error) {
       this.logger.error(
-        `Failed to load template '${templateName}' at ${filePath}`,
-        error,
-      );
+        {
+        msg: `Failed to load template '${templateName}' at ${filePath}`,
+       err: (error as Error).message,
+       stack: (error as Error).stack,
+      });
 
       // Re-throw the error so the BullMQ job registers as failed
       // and can be retried or moved to the dead-letter queue.

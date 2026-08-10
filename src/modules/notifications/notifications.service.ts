@@ -50,10 +50,10 @@ export class NotificationsService {
                 this.teamNotificationsService.handleOrderCreated(event)
             ]);
         } catch (err) {
-            this.logger.error(
-                `handleOrderCreated failed for company ${event.payload.companyId}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `handleOrderCreated failed for company ${event.payload.companyId}`,
+                stack: (err as Error).stack
+            });
             // Swallow – never crash the event loop
         }
     }
@@ -76,10 +76,10 @@ export class NotificationsService {
                 this.teamNotificationsService.handleOrderStatusChanged(event)
             ]);
         } catch (err) {
-            this.logger.error(
-                `handleOrderStatusChanged failed for company ${event.payload.companyId}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `handleOrderStatusChanged failed for company ${event.payload.companyId}`,
+                stack: (err as Error).stack
+            });
         }
     }
 
@@ -88,10 +88,10 @@ export class NotificationsService {
         try {
             await this.handleOrderStatusChanged(event);
         } catch (err) {
-            this.logger.error(
-                `handleOrderAssigned failed for company ${event.payload.companyId}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `handleOrderAssigned failed for company ${event.payload.companyId}`,
+                stack: (err as Error).stack
+            });
         }
     }
 
@@ -100,10 +100,10 @@ export class NotificationsService {
         try {
             await this.handleOrderStatusChanged(event);
         } catch (err) {
-            this.logger.error(
-                `handleOrderPickedUp failed for company ${event.payload.companyId}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `handleOrderPickedUp failed for company ${event.payload.companyId}`,
+                stack: (err as Error).stack
+            });
         }
     }
 
@@ -112,10 +112,10 @@ export class NotificationsService {
         try {
             await this.handleOrderStatusChanged(event);
         } catch (err) {
-            this.logger.error(
-                `handleOrderDelivered failed for company ${event.payload.companyId}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `handleOrderDelivered failed for company ${event.payload.companyId}`,
+                stack: (err as Error).stack
+            });
         }
     }
 
@@ -124,10 +124,10 @@ export class NotificationsService {
         try {
             await this.handleOrderStatusChanged(event);
         } catch (err) {
-            this.logger.error(
-                `handleOrderFailed failed for company ${event.payload.companyId}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `handleOrderFailed failed for company ${event.payload.companyId}`,
+                stack: (err as Error).stack
+            });
         }
     }
 
@@ -136,10 +136,10 @@ export class NotificationsService {
         try {
             await this.handleOrderStatusChanged(event);
         } catch (err) {
-            this.logger.error(
-                `handleOrderCancelled failed for company ${event.payload.companyId}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `handleOrderCancelled failed for company ${event.payload.companyId}`,
+                stack: (err as Error).stack
+            });
         }
     }
 
@@ -152,10 +152,10 @@ export class NotificationsService {
         try {
             await this.teamNotificationsService.handleTeamMemberAccepted(event);
         } catch (err) {
-            this.logger.error(
-                `handleTeamMemberAccepted failed for company ${event.payload.companyId}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `handleTeamMemberAccepted failed for company ${event.payload.companyId}`,
+                stack: (err as Error).stack
+            });
         }
     }
 
@@ -164,10 +164,10 @@ export class NotificationsService {
         try {
             await this.teamNotificationsService.handleTeamInviteMember(event);
         } catch (err) {
-            this.logger.error(
-                `handleTeamInviteMember failed for company ${event.payload.companyId}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `handleTeamInviteMember failed for company ${event.payload.companyId}`,
+                stack: (err as Error).stack
+            });
         }
     }
 
@@ -180,10 +180,10 @@ export class NotificationsService {
                 event
             );
         } catch (err) {
-            this.logger.error(
-                `handleTeamMemberSuspended failed for company ${event.payload.companyId}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `handleTeamMemberSuspended failed for company ${event.payload.companyId}`,
+                stack: (err as Error).stack
+            });
         }
     }
 
@@ -196,10 +196,10 @@ export class NotificationsService {
                 event
             );
         } catch (err) {
-            this.logger.error(
-                `handleTeamMemberActivated failed for company ${event.payload.companyId}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `handleTeamMemberActivated failed for company ${event.payload.companyId}`,
+                stack: (err as Error).stack
+            });
         }
     }
 
@@ -214,9 +214,10 @@ export class NotificationsService {
             });
         } catch (err) {
             this.logger.error(
-                `Failed to load notification settings for company ${companyId}`,
-                (err as Error).stack
-            );
+              {
+               msg: `Failed to load notification settings for company ${companyId}`,
+               stack: (err as Error).stack
+           } );
             return null; // safe fallback: skip all notifications for this company
         }
     }

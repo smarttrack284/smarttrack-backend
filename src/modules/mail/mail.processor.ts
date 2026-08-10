@@ -13,6 +13,18 @@ import {
   type SendTemplateEmailJobData,
 } from './constants/mail-queue.constant';
 
+/**
+ * Masks the local part of an email address, keeping the domain.
+ * e.g., "john.doe@gmail.com" → "j***@gmail.com"
+ */
+function maskEmail(email: string): string {
+  const [local, domain] = email.split('@');
+  if (!domain) return '***'; // fallback
+  const visible = local.charAt(0);
+  const maskedLocal = visible + '***';
+  return `${maskedLocal}@${domain}`;
+}
+
 @Processor(MAIL_QUEUE_NAME, {
   concurrency: 5,
   limiter: { max: 10, duration: 1000 },
@@ -32,6 +44,7 @@ export class MailProcessor extends WorkerHost {
     if (job.name !== MailJobName.SEND_TEMPLATE_EMAIL) return;
 
     const { to, subject, templateName, context } = job.data;
+    const maskedRecipient = maskEmail(to);
 
     try {
       const html = this.templateService.render(
@@ -46,13 +59,16 @@ export class MailProcessor extends WorkerHost {
       });
 
       this.logger.log(
-        `Sent "${templateName}" to ${to} (provider id: ${result.providerMessageId})`,
+        `Sent email "${templateName}" to ${maskedRecipient} (provider id: ${result.providerMessageId})`,
       );
     } catch (err) {
-      this.logger.error(
-        `Failed to send email "${templateName}" to ${to}: ${err instanceof Error ? err.message : err}`,
-        err instanceof Error ? err.stack : undefined,
-      );
+      this.logger.error({
+        msg: `Failed to send email "${templateName}" to ${maskedRecipient}`,
+        err: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+        templateName,
+        maskedRecipient,
+      });
       // Re‑throw so BullMQ marks the job as failed and applies retry logic
       throw err;
     }

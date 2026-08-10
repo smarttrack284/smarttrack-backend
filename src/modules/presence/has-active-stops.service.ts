@@ -10,7 +10,7 @@ export class HasActiveStopsService {
 
     constructor(
         @InjectRepository(TripStop)
-        private readonly tripStopRepo: Repository<TripStop>,
+        private readonly tripStopRepo: Repository<TripStop>
     ) {}
 
     /**
@@ -28,16 +28,17 @@ export class HasActiveStopsService {
                 .innerJoin("stop.trip", "trip")
                 .where("trip.driverUserId = :driverUserId", { driverUserId })
                 .andWhere("stop.status IN (:...statuses)", {
-                    statuses: [StopStatus.PENDING, StopStatus.ARRIVED],
+                    statuses: [StopStatus.PENDING, StopStatus.ARRIVED]
                 })
                 .getCount();
 
             return count > 0;
         } catch (err) {
-            this.logger.error(
-                `Failed to check active stops for driver ${driverUserId}`,
-                (err as Error).stack,
-            );
+            this.logger.error({
+                msg: `Failed to check active stops for driver ${driverUserId}`,
+                err: (err as Error).message,
+                stack: (err as Error).stack
+            });
             // Safe fallback – treat as if no active stops so offline event still fires
             return false;
         }

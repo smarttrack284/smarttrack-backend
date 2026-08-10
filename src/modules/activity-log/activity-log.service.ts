@@ -44,7 +44,7 @@ import { rule } from "#/common/errors/error-handler.service";
 import { InternalErrorException } from "#/common/exceptions";
 import { QueryFailedError } from "typeorm";
 import { OrderStatus } from "#/common/constants/order-status.constant";
-import {ListActivityLogQueryDto} from "./dto/list-activity-log.query.dto"
+import { ListActivityLogQueryDto } from "./dto/list-activity-log.query.dto";
 
 @Injectable()
 export class ActivityLogService {
@@ -98,12 +98,12 @@ export class ActivityLogService {
         } catch (err) {
             // Activity logging is non‑critical; a failure must not break
             // the business operation that triggered the event.
-            this.logger.error(
-                `Failed to record activity log for company ${
-                    input.companyId
-                }: ${err instanceof Error ? err.message : err}`,
-                err instanceof Error ? err.stack : undefined
-            );
+            this.logger.error({
+                msg: `Failed to record activity log for company ${input.companyId}`,
+                err: err instanceof Error ? err.message : new
+                Error(String(err)),
+                stack: (err as Error).stack
+            });
         }
     }
 

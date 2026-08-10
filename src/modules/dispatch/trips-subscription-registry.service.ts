@@ -17,7 +17,11 @@ export class TripsSubscriptionRegistry {
 
         // Log Redis connection errors so they don't go unnoticed
         this.redis.on("error", err => {
-            this.logger.error("Redis connection error", err.stack);
+            this.logger.error({
+                msg: "Redis connection error",
+                err: err.message,
+                stack: err.stack
+            });
         });
     }
 
@@ -37,17 +41,18 @@ export class TripsSubscriptionRegistry {
             const results = await pipeline.exec();
             results?.forEach(([err]) => {
                 if (err) {
-                    this.logger.error(
-                        `Pipeline error in set for socket ${socketId}`,
-                        err.stack
-                    );
+                    this.logger.error({
+                        msg: `Pipeline error in set for socket ${socketId}`,
+                        err: err.stack
+                    });
                 }
             });
         } catch (err) {
-            this.logger.error(
-                `Failed to set subscription for socket ${socketId}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `Failed to set subscription for socket ${socketId}`,
+                err: (err as Error).message,
+                stack: (err as Error).stack
+            });
             throw err; // re‑throw so the gateway knows it failed
         }
     }
@@ -64,17 +69,18 @@ export class TripsSubscriptionRegistry {
             const results = await pipeline.exec();
             results?.forEach(([err]) => {
                 if (err) {
-                    this.logger.error(
-                        `Pipeline error in remove for socket ${socketId}`,
-                        err.stack
-                    );
+                    this.logger.error({
+                        msg: `Pipeline error in remove for socket ${socketId}`,
+                        err: err.stack
+                    });
                 }
             });
         } catch (err) {
-            this.logger.error(
-                `Failed to remove subscription for socket ${socketId}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `Failed to remove subscription for socket ${socketId}`,
+                err: (err as Error).message,
+                stack: (err as Error).stack
+            });
             // Swallow – best‑effort cleanup
         }
     }
@@ -91,10 +97,11 @@ export class TripsSubscriptionRegistry {
                 query: JSON.parse(raw as string) as ListTripsQueryDto
             }));
         } catch (err) {
-            this.logger.error(
-                `Failed to get subscriptions for company ${companyId}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `Failed to get subscriptions for company ${companyId}`,
+                err: (err as Error).message,
+                stack: (err as Error).stack
+            });
             return []; // graceful degradation – no subscribers get updates
         }
     }

@@ -28,7 +28,9 @@ export class PaystackWebhookHandlerService {
             signature
         );
         if (!isValid) {
-            this.logger.warn("Rejected Paystack webhook: invalid signature");
+            this.logger.warn({
+                msg: "Rejected Paystack webhook: invalid signature"
+            });
             throw new UnauthorizedAppException("Invalid webhook signature");
         }
 
@@ -37,56 +39,58 @@ export class PaystackWebhookHandlerService {
         try {
             event = JSON.parse(rawBody.toString("utf-8"));
         } catch {
-            this.logger.warn("Rejected Paystack webhook: malformed JSON body");
+            this.logger.warn({
+                msg: "Rejected Paystack webhook: malformed JSON body"
+            });
             return; // 200 OK – prevents retries on an unparseable payload
         }
 
         // Each event handler is wrapped individually so a failure in one
         // never affects another, and we ALWAYS return 200 OK to Paystack.
         switch (event.event) {
-  case "charge.success":
-    await this.safeHandle("charge.success", () =>
-      this.handleChargeSuccess(event.data),
-    );
-    break;
+            case "charge.success":
+                await this.safeHandle("charge.success", () =>
+                    this.handleChargeSuccess(event.data)
+                );
+                break;
 
-  case "subscription.create":
-    await this.safeHandle("subscription.create", () =>
-      this.handleSubscriptionCreate(event.data),
-    );
-    break;
+            case "subscription.create":
+                await this.safeHandle("subscription.create", () =>
+                    this.handleSubscriptionCreate(event.data)
+                );
+                break;
 
-  case "subscription.renew":
-    // A successful recurring charge — update the period end & ensure active
-    await this.safeHandle("subscription.renew", () =>
-      this.handleSubscriptionRenew(event.data),
-    );
-    break;
+            case "subscription.renew":
+                // A successful recurring charge — update the period end & ensure active
+                await this.safeHandle("subscription.renew", () =>
+                    this.handleSubscriptionRenew(event.data)
+                );
+                break;
 
-  case "subscription.disable":
-  case "subscription.not_renew":
-    await this.safeHandle(event.event, () =>
-      this.subscriptionsService.downgradeToFreeOnCancellation(
-        event.data.subscription_code,
-      ),
-    );
-    break;
+            case "subscription.disable":
+            case "subscription.not_renew":
+                await this.safeHandle(event.event, () =>
+                    this.subscriptionsService.downgradeToFreeOnCancellation(
+                        event.data.subscription_code
+                    )
+                );
+                break;
 
-  case "subscription.expire":
-    await this.safeHandle("subscription.expire", () =>
-      this.handleSubscriptionExpire(event.data),
-    );
-    break;
+            case "subscription.expire":
+                await this.safeHandle("subscription.expire", () =>
+                    this.handleSubscriptionExpire(event.data)
+                );
+                break;
 
-  case "invoice.payment_failed":
-    await this.safeHandle("invoice.payment_failed", () =>
-      this.handleInvoicePaymentFailed(event.data),
-    );
-    break;
+            case "invoice.payment_failed":
+                await this.safeHandle("invoice.payment_failed", () =>
+                    this.handleInvoicePaymentFailed(event.data)
+                );
+                break;
 
-  default:
-    this.logger.log(`Ignored Paystack event: ${event.event}`);
-}
+            default:
+                this.logger.log(`Ignored Paystack event: ${event.event}`);
+        }
     }
 
     /**
@@ -101,10 +105,11 @@ export class PaystackWebhookHandlerService {
         try {
             await handler();
         } catch (err) {
-            this.logger.error(
-                `Paystack webhook handler failed for event "${eventName}"`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `Paystack webhook handler failed for event "${eventName}"`,
+                err: (err as Error).message,
+                stack: (err as Error).stack
+            });
             // Intentionally swallowed – prevents retries from Paystack
         }
     }
@@ -125,9 +130,9 @@ export class PaystackWebhookHandlerService {
         const plan = this.mapPlanCodeToPlan(data.plan?.plan_code);
 
         if (!companyId || !plan) {
-            this.logger.warn(
-                `Could not resolve companyId/plan from subscription.create payload`
-            );
+            this.logger.warn({
+                msg: `Could not resolve companyId/plan from subscription.create payload`
+            });
             return;
         }
 
@@ -197,9 +202,9 @@ export class PaystackWebhookHandlerService {
         sub.status = SubscriptionStatus.CANCELED;
         await this.subscriptionsService.save(sub);
 
-        this.logger.log(
-            `Subscription ${subscriptionCode} expired — downgraded company ${sub.companyId} to FREE`
-        );
+        this.logger.log({
+            msg: `Subscription ${subscriptionCode} expired — downgraded company ${sub.companyId} to FREE`
+        });
     }
 
     /**

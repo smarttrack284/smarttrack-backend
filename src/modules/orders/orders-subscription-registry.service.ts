@@ -17,7 +17,11 @@ export class OrdersSubscriptionRegistry {
 
         // Log Redis connection errors so they don't go unnoticed
         this.redis.on("error", err => {
-            this.logger.error("Redis connection error", err.stack);
+            this.logger.error({
+                msg: "Redis connection error",
+                stack: err.stack,
+                err: err.message
+            });
         });
     }
 
@@ -45,10 +49,11 @@ export class OrdersSubscriptionRegistry {
                 }
             });
         } catch (err) {
-            this.logger.error(
-                `Failed to set subscription for socket ${socketId}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `Failed to set subscription for socket ${socketId}`,
+                err: (err as Error).message,
+                stack: (err as Error).stack
+            });
             // Re-throw so the gateway can decide how to handle it
             throw err;
         }
@@ -66,10 +71,11 @@ export class OrdersSubscriptionRegistry {
             const results = await pipeline.exec();
             results?.forEach(([err]) => {
                 if (err) {
-                    this.logger.error(
-                        `Pipeline error in remove for socket ${socketId}`,
-                        err.stack
-                    );
+                    this.logger.error({
+                        msg: `Pipeline error in remove for socket ${socketId}`,
+                        err: err.message,
+                        stack: err.stack
+                    });
                 }
             });
         } catch (err) {
@@ -94,9 +100,11 @@ export class OrdersSubscriptionRegistry {
             }));
         } catch (err) {
             this.logger.error(
-                `Failed to get subscriptions for company ${companyId}`,
-                (err as Error).stack
-            );
+              {
+                msg: `Failed to get subscriptions for company ${companyId}`,
+               err: (err as Error).message,
+               stack: (err as Error).stack,
+          }  );
             // Return empty – the event simply won’t be pushed to any socket,
             // which is safer than crashing the event loop
             return [];

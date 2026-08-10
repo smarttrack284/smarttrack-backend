@@ -21,33 +21,35 @@ export class SubscriptionReminderService {
         @InjectRepository(Subscription)
         private readonly subscriptionRepo: Repository<Subscription>,
         @InjectQueue(SUBSCRIPTION_REMINDER_QUEUE_NAME)
-        private readonly reminderQueue: Queue,
+        private readonly reminderQueue: Queue
     ) {}
 
     @Cron("0 8 * * *")
     async sendExpirationReminders(): Promise<void> {
-        this.logger.log("Running subscription expiration reminders…");
+        this.logger.log({ msg: "Running subscription expiration reminders…" });
 
         try {
             const now = new Date();
             const future = new Date();
-            future.setDate(now.getDate() + SubscriptionReminderService.REMINDER_DAYS_AHEAD);
+            future.setDate(
+                now.getDate() + SubscriptionReminderService.REMINDER_DAYS_AHEAD
+            );
 
             // Only fetch the columns we need for the job data
             const subscriptions = await this.subscriptionRepo
                 .createQueryBuilder("sub")
                 .select(["sub.id", "sub.companyId"])
                 .where("sub.status = :status", {
-                    status: SubscriptionStatus.ACTIVE,
+                    status: SubscriptionStatus.ACTIVE
                 })
                 .andWhere("sub.currentPeriodEnd BETWEEN :now AND :future", {
                     now,
-                    future,
+                    future
                 })
                 .getMany();
 
             if (subscriptions.length === 0) {
-                this.logger.log("No subscriptions expiring soon.");
+                this.logger.log({ msg: "No subscriptions expiring soon." });
                 return;
             }
 
@@ -58,24 +60,28 @@ export class SubscriptionReminderService {
                     SubscriptionReminderJobName.SEND_EXPIRY_REMINDER,
                     {
                         subscriptionId: sub.id,
-                        companyId: sub.companyId,
+                        companyId: sub.companyId
                     },
                     {
                         jobId, // deduplication
                         attempts: 2,
                         backoff: { type: "exponential", delay: 5000 },
                         removeOnComplete: true,
-                        removeOnFail: 500,
-                    },
+                        removeOnFail: 500
+                    }
                 );
             }
 
-            this.logger.log(`Enqueued ${subscriptions.length} expiration reminders.`);
+            this.logger.log({
+                msg: `Enqueued ${subscriptions.length} expiration reminders.`
+            });
         } catch (err) {
             this.logger.error(
+              {msg: 
                 "Subscription reminder cron job failed",
-                (err as Error).stack,
-            );
+              err:  (err as Error).message,
+              stack:  (err as Error).stack,
+           } );
         }
     }
 }

@@ -118,10 +118,11 @@ export class PaystackService {
             // Let ExternalServiceException pass through unchanged
             if (err instanceof ExternalServiceException) throw err;
 
-            this.logger.error(
-                "Paystack initializeTransaction failed",
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: "Paystack initializeTransaction failed",
+                err: (err as Error).message,
+                stack: (err as Error).stack
+            });
             throw new InternalErrorException(
                 "Payment service is temporarily unavailable. Please try again."
             );
@@ -143,10 +144,11 @@ export class PaystackService {
             return response.data;
         } catch (err) {
             if (err instanceof ExternalServiceException) throw err;
-            this.logger.error(
-                `Paystack verifyTransaction failed for reference ${reference}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `Paystack verifyTransaction failed for reference ${reference}`,
+                err: (err as Error).message,
+                stack: (err as Error).stack
+            });
             throw new InternalErrorException(
                 "Payment service is temporarily unavailable. Please try again."
             );
@@ -167,10 +169,11 @@ export class PaystackService {
             return response.data;
         } catch (err) {
             if (err instanceof ExternalServiceException) throw err;
-            this.logger.error(
-                `Paystack fetchSubscription failed for code ${subscriptionCode}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `Paystack fetchSubscription failed for code ${subscriptionCode}`,
+                err: (err as Error).message,
+                stack: (err as Error).stack
+            });
             throw new InternalErrorException(
                 "Payment service is temporarily unavailable. Please try again."
             );
@@ -199,10 +202,11 @@ export class PaystackService {
             }
         } catch (err) {
             if (err instanceof ExternalServiceException) throw err;
-            this.logger.error(
-                `Paystack disableSubscription failed for code ${subscriptionCode}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `Paystack disableSubscription failed for code ${subscriptionCode}`,
+                err: (err as Error).message,
+                stack: (err as Error).stack
+            });
             throw new InternalErrorException(
                 "Payment service is temporarily unavailable. Please try again."
             );
@@ -232,10 +236,11 @@ export class PaystackService {
             return response.data.link;
         } catch (err) {
             if (err instanceof ExternalServiceException) throw err;
-            this.logger.error(
-                `Paystack generateManageLink failed for code ${subscriptionCode}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `Paystack generateManageLink failed for code ${subscriptionCode}`,
+                err: (err as Error).message,
+                stack: (err as Error).stack
+            });
             throw new InternalErrorException(
                 "Payment service is temporarily unavailable. Please try again."
             );
@@ -258,10 +263,11 @@ export class PaystackService {
             if (expectedBuffer.length !== providedBuffer.length) return false;
             return timingSafeEqual(expectedBuffer, providedBuffer);
         } catch (err) {
-            this.logger.error(
-                "Webhook signature verification failed",
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: "Webhook signature verification failed",
+                err: (err as Error).message,
+                stack: (err as Error).stack
+            });
             return false; // fail safe
         }
     }
@@ -309,10 +315,11 @@ export class PaystackService {
             };
         } catch (err) {
             if (err instanceof ExternalServiceException) throw err;
-            this.logger.error(
-                `Paystack listTransactionsForCustomer failed for customer ${customerCode}`,
-                (err as Error).stack
-            );
+            this.logger.error({
+                msg: `Paystack listTransactionsForCustomer failed for customer ${customerCode}`,
+                err: (err as Error).message,
+                stack: (err as Error).stack,
+            });
             throw new InternalErrorException(
                 "Payment service is temporarily unavailable. Please try again."
             );
