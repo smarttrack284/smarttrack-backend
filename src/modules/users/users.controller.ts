@@ -8,8 +8,6 @@ import { UsersService } from './users.service';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { UpdatePasswordDto } from './dto/update-password.dto';
 import { OptionalAuthGuard } from '#/common/guards/optional-auth.guard';
-// import { UpdateNotificationSettingsDto } from "#/modules/users/dto/update-notification-settings.dto";
-//
 
 @Controller('users/me')
 export class UsersController {
@@ -40,7 +38,10 @@ export class UsersController {
     for await (const part of parts) {
       if (part.type === 'file' && part.fieldname === 'avatar') {
         const buffer = await part.toBuffer();
-        const validated = new FileValidationPipe().transform({
+        const validated = new FileValidationPipe({
+          allowedMimeTypes: new Set(['image/png', 'image/jpeg', 'image/webp']),
+          maxSizeBytes: 2 * 1024 * 1024,
+        }).transform({
           file: part,
           buffer,
         });

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Post, Query, Req, UseGuards, } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { BadRequestAppException } from '#/common/exceptions';
 import { SupabaseAuthGuard } from '#/common/guards/supabase-auth.guard';
@@ -69,7 +69,9 @@ export class BillingController {
   @Post('manage')
   async createManageLink(@CurrentUser() user: AuthenticatedUser) {
     const subscription =
-      await this.subscriptionsService.getSubscriptionByCompanyId(user.companyId!);
+      await this.subscriptionsService.getSubscriptionByCompanyId(
+        user.companyId!,
+      );
     if (!subscription.paymentSubscriptionId) {
       throw new BadRequestAppException(
         'No active subscription exists yet for this workspace',
@@ -86,13 +88,17 @@ export class BillingController {
   @Post('cancel')
   async cancelSubscription(@CurrentUser() user: AuthenticatedUser) {
     const subscription =
-      await this.subscriptionsService.getSubscriptionByCompanyId(user.companyId!);
+      await this.subscriptionsService.getSubscriptionByCompanyId(
+        user.companyId!,
+      );
     if (!subscription.paymentSubscriptionId) {
       throw new BadRequestAppException(
         'No active subscription exists yet for this workspace',
       );
     }
-    await this.paystackService.disableSubscription(subscription.paymentSubscriptionId);
+    await this.paystackService.disableSubscription(
+      subscription.paymentSubscriptionId,
+    );
     return { success: true };
   }
 

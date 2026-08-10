@@ -6,13 +6,19 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { UseGuards } from '@nestjs/common';
+import { Logger, UseGuards } from '@nestjs/common';
 import type { Server } from 'socket.io';
 import { WsAuthGuard } from '#/common/guards/ws-auth.guard';
 import { SupabaseJwtVerifierService } from '#/common/auth/supabase-jwt-verifier.service';
 import type { AuthenticatedSocket } from '#/common/types/authenticated-socket.type';
 import { TrackingEmitterService } from './tracking-emitter.service';
 import { TrackingService } from './tracking.service';
+import { parse } from 'cookie';
+import { RedisCacheService } from '#/common/cache/redis-cache.service';
+import { UsersService } from '#/modules/users/users.service';
+
+const USER_ROLE_CACHE_TTL = 60;
+
 
 @WebSocketGateway({
   namespace: 'tracking',
@@ -22,35 +28,77 @@ export class TrackingGateway implements OnGatewayInit {
   @WebSocketServer()
   server: Server;
 
+  private logger: Logger =  new Logger(TrackingGateway.name)
+
   constructor(
     private readonly emitter: TrackingEmitterService,
     private readonly trackingService: TrackingService,
     private readonly verifier: SupabaseJwtVerifierService,
+    private readonly  cache: RedisCacheService,
+    private readonly usersService: UsersService,
   ) {}
 
   afterInit(server: Server): void {
     this.emitter.setServer(server);
   }
 
-  /**
-   * Best-effort auth at connection time — a token here means "this socket
-   * is a signed-in user," but does NOT by itself grant access to any room.
-   * A missing token is fine (public tracking clients have none); an
-   * INVALID token disconnects immediately, since presenting a bad token is
-   * different from presenting none at all.
-   */
   async handleConnection(socket: AuthenticatedSocket): Promise<void> {
-    const token = socket.handshake.auth?.token as string | undefined;
-    if (!token) return;
+    // Extract access token from the httpOnly cookie sent with the upgrade request
+    const rawCookie = socket.request.headers.cookie ?? '';
+    const cookies = parse(rawCookie);
+    const token = cookies['sb-access-token'];
+
+    if (!token) {
+      this.logger.warn(
+        `Socket ${socket.id} missing access token – disconnecting`,
+      );
+      socket.disconnect(true);
+      return;
+    }
 
     try {
-      socket.data.user = await this.verifier.verify(token);
-    } catch {
+      // 1. Verify JWT (exactly what SupabaseAuthGuard does)
+      const payload = await this.verifier.verify(token);
+      socket.data.user = payload;
+
+      // 2. Enrich socket with companyId & role (cached, same as guards)
+      const userId: string = payload.id;
+      const userRole = await this.cache.getOrSet<{
+        companyId: string;
+        role: string;
+        status: string;
+      } | null>(`user:company:${userId}`, USER_ROLE_CACHE_TTL, async () => {
+        const role = await this.usersService.getUserRoleByUserId(userId);
+        return role
+          ? {
+              companyId: role.companyId,
+              role: role.role,
+              status: role.status,
+            }
+          : null;
+      });
+
+      if (!userRole || userRole.status !== 'active') {
+        this.logger.warn(
+          `Socket ${socket.id} user ${userId} has no active company role`,
+        );
+        socket.disconnect(true);
+        return;
+      }
+
+      // Enrich socket data with companyId
+      socket.data.user.companyId = userRole.companyId;
+      // Also store role if needed (optional)
+      socket.data.user.role = userRole.role;
+    } catch (err) {
+      this.logger.error(
+        `Connection auth error for socket ${socket.id}`,
+        (err as Error).stack,
+      );
       socket.disconnect(true);
     }
   }
 
-  /** Requires auth (WsAuthGuard) AND company membership (assertUserCanAccessTrip) — two separate checks, neither sufficient alone. */
   @UseGuards(WsAuthGuard)
   @SubscribeMessage('subscribe:trip')
   async handleSubscribeTrip(

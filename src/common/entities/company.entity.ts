@@ -1,6 +1,7 @@
 import {
   Column,
   CreateDateColumn,
+  DeleteDateColumn,
   Entity,
   OneToMany,
   OneToOne,
@@ -57,7 +58,6 @@ export class Company {
   )
   notificationSettings: CompanyNotificationSetting;
 
-  
   @CreateDateColumn({
     name: 'created_at',
     type: 'timestamptz',
@@ -69,4 +69,7 @@ export class Company {
     type: 'timestamptz',
   })
   updatedAt: Date;
+
+  @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz' })
+  deletedAt: Date;
 }

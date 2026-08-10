@@ -108,9 +108,6 @@ export class CompaniesController {
     );
   }
 
-  // Note: The `companyId` is extracted from the URL param, but the route is
-  // still protected by the RolesGuard; the guard checks the user's role from
-  // `request.user.role` – set by SupabaseAuthGuard.
   @UseGuards(SupabaseAuthGuard, RolesGuard)
   @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN)
   @Patch(':companyId')
@@ -132,7 +129,10 @@ export class CompaniesController {
     for await (const part of parts) {
       if (part.type === 'file' && part.fieldname === 'logo') {
         const buffer = await part.toBuffer();
-        const validated = new FileValidationPipe().transform({
+        const validated = new FileValidationPipe({
+          allowedMimeTypes: new Set(['image/png', 'image/jpeg', 'image/webp']),
+          maxSizeBytes: 2 * 1024 * 1024,
+        }).transform({
           file: part,
           buffer,
         });

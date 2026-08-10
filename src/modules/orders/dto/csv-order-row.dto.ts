@@ -8,37 +8,45 @@ import {
   MinLength,
 } from 'class-validator';
 import { OrderPriority } from '#/common/constants/order-status.constant';
+import { NoSpecialChars } from '#/common/validators/no-special-chars.validator';
 
-/**
- * Flat, one-row-per-order shape — CSV can't represent CreateOrderDto's
- * nested objects (pickupLocation, items) directly, so those are flattened
- * into individual columns and re-assembled in the mapper below.
- * pickupSavedLocationId is deliberately absent: that field links to a
- * saved location record by UUID, which a CSV row has no way to
- * meaningfully reference — every CSV-imported order gets a manually
- * geocoded pickup, never a saved-location link.
- */
 export class CsvOrderRowDto {
   @IsString()
   @MinLength(2)
   @MaxLength(255)
+  @NoSpecialChars({
+    pattern: /^[\p{L}0-9\s\-'.]+$/u,
+    message: 'Customer name contains invalid characters',
+  })
   customerName: string;
 
   @IsString()
   @MaxLength(32)
+  @NoSpecialChars({
+    pattern: /^[\d\s\-+()]+$/,
+    message: 'Phone number contains invalid characters',
+  })
   customerPhone: string;
 
-  @IsOptional()
   @IsEmail()
   @MaxLength(100)
-  customerEmail?: string;
+  customerEmail: string;
 
   @IsString()
   @MaxLength(255)
+  @NoSpecialChars({
+    pattern: /^[a-zA-Z0-9\-_ ]+$/,
+    message:
+      'Pickup label can only contain letters, numbers, spaces, hyphens, and underscores',
+  })
   pickupLabel: string;
 
   @IsString()
   @MaxLength(500)
+  @NoSpecialChars({
+    pattern: /^[^<>`]+$/,
+    message: 'Pickup address contains invalid characters',
+  })
   pickupAddress: string;
 
   @Type(() => Number)
@@ -49,10 +57,19 @@ export class CsvOrderRowDto {
 
   @IsString()
   @MaxLength(255)
+  @NoSpecialChars({
+    pattern: /^[a-zA-Z0-9\-_ ]+$/,
+    message:
+      'Dropoff label can only contain letters, numbers, spaces, hyphens, and underscores',
+  })
   dropoffLabel: string;
 
   @IsString()
   @MaxLength(500)
+  @NoSpecialChars({
+    pattern: /^[^<>`]+$/,
+    message: 'Dropoff address contains invalid characters',
+  })
   dropoffAddress: string;
 
   @Type(() => Number)
@@ -61,8 +78,12 @@ export class CsvOrderRowDto {
   @Type(() => Number)
   dropoffLng: number;
 
-  /** Format: "Item name:quantity|Item name:quantity" — e.g. "Jollof rice:2|Water:3". Parsed and validated separately in csv-order-row.util.ts, not via class-validator decorators, since nested-array parsing from a delimited string doesn't fit that pattern cleanly. */
+  // Format: "Item name:quantity|Item name:quantity"
   @IsString()
+  @NoSpecialChars({
+    pattern: /^[^<>`]+$/,
+    message: 'Items field contains invalid characters',
+  })
   items: string;
 
   @IsOptional()
@@ -75,5 +96,9 @@ export class CsvOrderRowDto {
 
   @IsOptional()
   @IsString()
+  @NoSpecialChars({
+    pattern: /^[^<>`]+$/,
+    message: 'Notes contain invalid characters',
+  })
   notes?: string;
 }

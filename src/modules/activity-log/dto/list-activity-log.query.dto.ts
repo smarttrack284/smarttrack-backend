@@ -1,16 +1,7 @@
 import { Transform, Type } from 'class-transformer';
-import {
-  IsArray,
-  IsEnum,
-  IsInt,
-  IsOptional,
-  IsString,
-  Min,
-} from 'class-validator';
-import {
-  ActivityCategory,
-  ActivitySeverity,
-} from '#/common/constants/activity-log.constant';
+import { IsArray, IsEnum, IsInt, IsOptional, IsString, Min, } from 'class-validator';
+import { ActivityCategory, ActivitySeverity, } from '#/common/constants/activity-log.constant';
+import { NoSpecialChars } from '#/common/validators/no-special-chars.validator';
 
 export class ListActivityLogQueryDto {
   @IsOptional()
@@ -31,6 +22,10 @@ export class ListActivityLogQueryDto {
 
   @IsOptional()
   @IsString()
+  @NoSpecialChars({
+    pattern: /^[^<>`]+$/,
+    message: 'Search query contains invalid characters',
+  })
   search?: string;
 
   @IsOptional()

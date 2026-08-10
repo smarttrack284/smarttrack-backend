@@ -1,6 +1,7 @@
 import {
   Column,
   CreateDateColumn,
+  DeleteDateColumn,
   Entity,
   Index,
   JoinColumn,
@@ -30,7 +31,6 @@ export class WebhookEndpoint {
   @Column({ type: 'varchar', length: 500 })
   url: string;
 
-  /** AES-256-GCM encrypted, NOT hashed — signing a delivery requires the plaintext, unlike an API key which only ever needs comparison. See webhook-secret.util.ts. */
   @Column({ name: 'secret_encrypted', type: 'varchar', length: 500 })
   secretEncrypted: string;
 
@@ -45,4 +45,7 @@ export class WebhookEndpoint {
 
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
+
+  @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz' })
+  deletedAt: Date;
 }

@@ -1,8 +1,9 @@
-import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger, } from '@nestjs/common';
-import type { FastifyReply, FastifyRequest } from 'fastify';
-import { AppException } from '#/common/exceptions/app.exception';
-import { ErrorCode } from '#/common/constants/error-code-enum';
-import { buildErrorResponse } from '../utils/error-response.util';
+import {ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger,} from '@nestjs/common';
+import type {FastifyReply, FastifyRequest} from 'fastify';
+import * as Sentry from '@sentry/node';
+import {AppException} from '#/common/exceptions/app.exception';
+import {ErrorCode} from '#/common/constants/error-code-enum';
+import {buildErrorResponse} from '../utils/error-response.util';
 
 type ResolvedError = {
   status: number;
@@ -20,6 +21,13 @@ type ResolvedError = {
  * an unexpected error's raw message/stack leak to the client — those get
  * logged in full server-side and replaced with a generic message in the
  * response.
+ *
+ * Sentry integration:
+ * - Only errors with a resolved status >= 500 (unexpected, bugs) are sent to
+ *   Sentry. Expected business errors (4xx, including AppException subclasses)
+ *   are intentionally NOT reported to keep the Sentry dashboard clean and
+ *   focused on real problems. User context (id, email, company) is set in
+ *   the SupabaseAuthGuard and automatically attached to any captured event.
  */
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -54,6 +62,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     });
 
     this.log(exception, resolved.status, request, requestId);
+
+    // ---------- Sentry: only report real problems (5xx / unknown) ----------
+    if (resolved.status >= 500) {
+      Sentry.captureException(exception);
+    }
+    // -----------------------------------------------------------------------
 
     reply.status(resolved.status).send(body);
   }

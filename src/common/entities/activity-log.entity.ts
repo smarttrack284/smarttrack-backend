@@ -2,14 +2,6 @@ import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, Primary
 import { ActivityCategory, ActivitySeverity, } from '#/common/constants/activity-log.constant';
 import { Company } from '#/common/entities/company.entity';
 
-/**
- * Append-only. `actorName` is denormalized at write time (not joined at
- * read time) — same reasoning as everywhere else driver/user identity
- * crosses the Supabase-auth boundary: the actor may leave the team or
- * their name may change later, and a historical log entry should show
- * what was true when the event happened, not a live lookup that could
- * silently change or 404.
- */
 @Entity('activity_logs')
 @Index(['companyId', 'createdAt'])
 @Index(['companyId', 'category'])

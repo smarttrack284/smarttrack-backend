@@ -1,0 +1,128 @@
+import { CanActivate, ExecutionContext, Injectable, Logger, } from '@nestjs/common';
+import type { FastifyRequest } from 'fastify';
+import { ForbiddenAppException, InternalErrorException, UnauthorizedAppException, } from '#/common/exceptions';
+import { SupabaseJwtVerifierService } from '#/common/auth/supabase-jwt-verifier.service';
+import { RedisCacheService } from '#/common/cache/redis-cache.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { UserRole } from '#/common/entities/user-role.entity';
+import { TeamMemberStatus } from '#/common/constants/team-member-status.constant';
+import * as Sentry from '@sentry/node';
+
+@Injectable()
+export class SupabaseAuthGuard implements CanActivate {
+  // How long we cache the user-company mapping (seconds)
+  private static readonly USER_COMPANY_CACHE_TTL = 300;
+  private readonly logger = new Logger(SupabaseAuthGuard.name);
+
+  constructor(
+    private readonly verifier: SupabaseJwtVerifierService,
+    private readonly cache: RedisCacheService,
+    @InjectRepository(UserRole)
+    private readonly userRoleRepo: Repository<UserRole>,
+  ) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<FastifyRequest>();
+    const token = this.extractToken(request);
+
+    if (!token) {
+      this.logger.warn(
+        `Auth failed: missing bearer token [reqId: ${this.getRequestId(
+          request,
+        )}]`,
+      );
+      throw new UnauthorizedAppException('Missing bearer token');
+    }
+
+    try {
+      const payload = await this.verifier.verify(token);
+
+      const userId: string = payload.id;
+      const membership = await this.cache.getOrSet<Pick<
+        UserRole,
+        'companyId' | 'role' | 'status'
+      > | null>(
+        `user:company:${userId}`,
+        SupabaseAuthGuard.USER_COMPANY_CACHE_TTL,
+        async () =>
+          await this.userRoleRepo.findOne({
+            where: { userId },
+            select: { companyId: true, role: true, status: true },
+          }),
+      );
+
+      if (!membership) {
+        this.logger.warn(
+          `Auth failed: no UserRole for ${userId} [reqId: ${this.getRequestId(
+            request,
+          )}]`,
+        );
+        throw new ForbiddenAppException(
+          'Your account is not associated with any company',
+        );
+      }
+
+      if (membership.status !== TeamMemberStatus.ACTIVE) {
+        this.logger.warn(
+          `Auth failed: inactive status ${
+            membership.status
+          } for ${userId} [reqId: ${this.getRequestId(request)}]`,
+        );
+        throw new ForbiddenAppException(
+          'Your account is not active. Please contact your administrator.',
+        );
+      }
+
+      Sentry.setUser({
+        id: payload.id,
+        email: payload.email,
+        companyId: membership.companyId,
+        role: membership.role,
+      });
+
+      request.user = {
+        ...payload,
+        companyId: membership.companyId,
+        role: membership.role,
+      };
+
+      return true;
+    } catch (err) {
+      if (
+        err instanceof UnauthorizedAppException ||
+        err instanceof ForbiddenAppException
+      ) {
+        this.logger.warn(
+          `Auth failed: ${err.message} [reqId: ${this.getRequestId(request)}]`,
+        );
+        throw err;
+      }
+
+      this.logger.error(
+        `JWT verification system error [reqId: ${this.getRequestId(
+          request,
+        )}]: ${err instanceof Error ? err.message : String(err)}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+      throw new InternalErrorException('Authentication service unavailable');
+    }
+  }
+
+  private extractToken(request: FastifyRequest): string | null {
+    const header = request.headers.authorization;
+    if (typeof header !== 'string') return null;
+
+    const parts = header.split(' ');
+    if (parts.length !== 2) return null;
+
+    const [scheme, token] = parts;
+    if (scheme?.toLowerCase() !== 'bearer' || !token) return null;
+
+    return token;
+  }
+
+  private getRequestId(request: FastifyRequest): string {
+    return String(request.id ?? 'unknown');
+  }
+}

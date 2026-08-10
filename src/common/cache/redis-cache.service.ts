@@ -2,13 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
-/**
- * Generic cache-aside helper over Redis — not specific to Overview.
- * getOrSet is the main entry point: return the cached value if present,
- * otherwise compute it, cache it, and return it. Failures reading/writing
- * the cache degrade to "just compute it" rather than breaking the request,
- * since a cache outage should never take down a read endpoint.
- */
 @Injectable()
 export class RedisCacheService {
   private readonly logger = new Logger(RedisCacheService.name);
@@ -18,6 +11,11 @@ export class RedisCacheService {
     const redisUrl = config.get<string>('REDIS_URL');
     if (!redisUrl) throw new Error('REDIS_URL is not configured');
     this.redis = new Redis(redisUrl);
+
+    // Log Redis connection errors
+    this.redis.on('error', (err) => {
+      this.logger.error('Redis connection error', err.stack);
+    });
   }
 
   async getOrSet<T>(
@@ -45,6 +43,39 @@ export class RedisCacheService {
     }
 
     return fresh;
+  }
+
+  /**
+   * Simple key lookup — returns the cached value (as a string, or null)
+   * without any compute logic.  Logs and returns null on Redis errors.
+   */
+  async get(key: string): Promise<string | null> {
+    try {
+      return await this.redis.get(key);
+    } catch (err) {
+      this.logger.warn(
+        `Cache get failed for ${key}: ${err instanceof Error ? err.message : err}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Sets a key with an optional TTL (in seconds).  If TTL is omitted, the
+   * key is stored without expiry.  Errors are logged but never thrown.
+   */
+  async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
+    try {
+      if (ttlSeconds !== undefined) {
+        await this.redis.set(key, value, 'EX', ttlSeconds);
+      } else {
+        await this.redis.set(key, value);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Cache set failed for ${key}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
   }
 
   async del(...keys: string[]): Promise<void> {

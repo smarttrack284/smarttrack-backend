@@ -1,21 +1,20 @@
 import { Type } from 'class-transformer';
-import {
-  IsDateString,
-  IsEnum,
-  IsInt,
-  IsOptional,
-  IsString,
-  Min,
-} from 'class-validator';
+import { IsDateString, IsEnum, IsInt, IsOptional, IsString, Min, } from 'class-validator';
 import { OrderStatus } from '#/common/constants/order-status.constant';
+import { NoSpecialChars } from '#/common/validators/no-special-chars.validator';
 
 export enum SortOrder {
   NEWEST = 'newest',
   OLDEST = 'oldest',
 }
+
 export class ListOrdersQueryDto {
   @IsOptional()
   @IsString()
+  @NoSpecialChars({
+    pattern: /^[^<>`]+$/,
+    message: 'Search query contains invalid characters',
+  })
   search?: string;
 
   @IsOptional()

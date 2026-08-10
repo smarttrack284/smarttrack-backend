@@ -1,62 +1,75 @@
-import { Type } from "class-transformer";
+import { Type } from 'class-transformer';
 import {
-    ArrayMinSize,
-    IsArray,
-    IsDateString,
-    IsEnum,
-    IsEmail,
-    IsOptional,
-    IsString,
-    IsUUID,
-    MaxLength,
-    MinLength,
-    ValidateNested
-} from "class-validator";
-import { OrderPriority } from "#/common/constants/order-status.constant";
-import { OrderLocationDto } from "./order-location.dto";
-import { OrderItemDto } from "./order-item.dto";
+  ArrayMinSize,
+  IsArray,
+  IsDateString,
+  IsEnum,
+  IsEmail,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
+import { OrderPriority } from '#/common/constants/order-status.constant';
+import { OrderLocationDto } from './order-location.dto';
+import { OrderItemDto } from './order-item.dto';
+import { NoSpecialChars } from '#/common/validators/no-special-chars.validator';
 
 export class CreateOrderDto {
-    @IsString()
-    @MinLength(2)
-    @MaxLength(255)
-    customerName: string;
+  @IsString()
+  @MinLength(2)
+  @MaxLength(255)
+  @NoSpecialChars({
+    pattern: /^[\p{L}0-9\s\-'.]+$/u,
+    message: 'Customer name contains invalid characters',
+  })
+  customerName: string;
 
-    @IsString()
-    @MaxLength(32)
-    customerPhone: string;
+  @IsString()
+  @MaxLength(32)
+  @NoSpecialChars({
+    pattern: /^[\d\s\-\+\(\)]+$/,
+    message: 'Phone number contains invalid characters',
+  })
+  customerPhone: string;
 
-    @IsEmail()
-    @MaxLength(100)
-    customerEmail: string;
+  @IsEmail()
+  @MaxLength(100)
+  customerEmail: string;
 
-    @ValidateNested()
-    @Type(() => OrderLocationDto)
-    pickupLocation: OrderLocationDto;
+  @ValidateNested()
+  @Type(() => OrderLocationDto)
+  pickupLocation: OrderLocationDto;
 
-    @IsOptional()
-    @IsUUID()
-    pickupSavedLocationId?: string;
+  @IsOptional()
+  @IsUUID()
+  pickupSavedLocationId?: string;
 
-    @ValidateNested()
-    @Type(() => OrderLocationDto)
-    dropoffLocation: OrderLocationDto;
+  @ValidateNested()
+  @Type(() => OrderLocationDto)
+  dropoffLocation: OrderLocationDto;
 
-    @IsArray()
-    @ArrayMinSize(1)
-    @ValidateNested({ each: true })
-    @Type(() => OrderItemDto)
-    items: OrderItemDto[];
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => OrderItemDto)
+  items: OrderItemDto[];
 
-    @IsOptional()
-    @IsEnum(OrderPriority)
-    priority?: OrderPriority;
+  @IsOptional()
+  @IsEnum(OrderPriority)
+  priority?: OrderPriority;
 
-    @IsOptional()
-    @IsDateString()
-    scheduledFor?: string;
+  @IsOptional()
+  @IsDateString()
+  scheduledFor?: string;
 
-    @IsOptional()
-    @IsString()
-    notes?: string;
+  @IsOptional()
+  @IsString()
+  @NoSpecialChars({
+    pattern: /^[^<>`]+$/,
+    message: 'Notes contain invalid characters',
+  })
+  notes?: string;
 }
