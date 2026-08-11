@@ -3,8 +3,8 @@ import {
   ArrayMinSize,
   IsArray,
   IsDateString,
-  IsEnum,
   IsEmail,
+  IsEnum,
   IsOptional,
   IsString,
   IsUUID,
@@ -68,7 +68,7 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   @NoSpecialChars({
-    pattern: /^[^<>`]+$/,
+    pattern: /^[^<>`]*$/,
     message: 'Notes contain invalid characters',
   })
   notes?: string;

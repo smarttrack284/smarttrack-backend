@@ -3,126 +3,134 @@
 <head>
     <meta charset="UTF-8">
     <title>Order Cancelled</title>
+    <!-- Import DM Sans for email clients that support web fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
 </head>
 
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;color:#18181b;">
+<body style="margin:0;padding:0;background:#fdfcfb;font-family:'DM Sans', ui-sans-serif, system-ui, Arial, sans-serif;color:#2b2a29;">
 
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f4f5;padding:40px 20px;">
-<tr>
-<td align="center">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fdfcfb;padding:40px 20px;">
+    <tr>
+        <td align="center">
 
-<table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background:#ffffff;border-radius:10px;overflow:hidden;">
+            <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background:#ffffff;border-radius:10px;overflow:hidden;">
 
-<tr>
-<td style="background:#16a34a;padding:24px;text-align:center;">
+                <!-- Header / Primary Brand Color -->
+                <tr>
+                    <td style="background:#e85c13;padding:24px;text-align:center;">
 
-<h1 style="margin:0;color:#ffffff;font-size:24px;">
-{{companyName}}
-</h1>
+                        <h1 style="margin:0;color:#ffffff;font-size:24px;">
+                            {{companyName}}
+                        </h1>
 
-<p style="margin:8px 0 0;color:#dcfce7;font-size:14px;">
-Team Notification
-</p>
+                        <p style="margin:8px 0 0;color:#fdfcfb;font-size:14px;">
+                            Team Notification
+                        </p>
 
-</td>
-</tr>
-
-
-<tr>
-<td style="padding:40px;">
-
-<p style="margin-top:0;font-size:16px;">
-Hello <strong>{{memberName}}</strong>,
-</p>
+                    </td>
+                </tr>
 
 
-<p style="font-size:15px;line-height:1.7;">
-An order has been cancelled and no further fulfillment action is required.
-</p>
+                <tr>
+                    <td style="padding:40px;">
+
+                        <p style="margin-top:0;font-size:16px;">
+                            Hello <strong>{{memberName}}</strong>,
+                        </p>
 
 
-<table width="100%" cellspacing="0" cellpadding="0" style="margin:30px 0;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;">
-
-<tr>
-<td style="padding:20px;">
-
-
-<p style="margin:0 0 10px;">
-<strong>Order Reference</strong>
-</p>
-
-<p style="margin:0;font-size:18px;font-weight:bold;color:#dc2626;">
-{{orderReference}}
-</p>
+                        <p style="font-size:15px;line-height:1.7;">
+                            An order has been cancelled and no further fulfillment action is required.
+                        </p>
 
 
-<p style="margin:20px 0 8px;">
-<strong>Customer</strong>
-</p>
+                        <!-- Order Details Box / Muted Background & Border -->
+                        <table width="100%" cellspacing="0" cellpadding="0" style="margin:30px 0;background:#f6f5f3;border:1px solid #e6e4df;border-radius:8px;">
 
-<p style="margin:0;font-size:15px;">
-{{customerName}}
-</p>
+                            <tr>
+                                <td style="padding:20px;">
 
 
-<p style="margin:20px 0 8px;">
-<strong>Status</strong>
-</p>
+                                    <p style="margin:0 0 10px;">
+                                        <strong>Order Reference</strong>
+                                    </p>
 
-<p style="margin:0;font-size:15px;font-weight:600;color:#dc2626;">
-{{statusLabel}}
-</p>
-
-
-</td>
-</tr>
-
-</table>
+                                    <!-- Highlight / Primary Color -->
+                                    <p style="margin:0;font-size:18px;font-weight:bold;color:#e85c13;">
+                                        #{{orderReference}}
+                                    </p>
 
 
-<div style="text-align:center;margin:35px 0;">
+                                    <p style="margin:20px 0 8px;">
+                                        <strong>Customer</strong>
+                                    </p>
 
-<a
-href="{{orderUrl}}"
-style="background:#16a34a;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:bold;display:inline-block;">
-View Order Details
-</a>
-
-</div>
+                                    <p style="margin:0;font-size:15px;">
+                                        {{customerName}}
+                                    </p>
 
 
-<p style="font-size:14px;color:#52525b;line-height:1.7;">
-Cancelled by:
-<strong>{{updatedBy}}</strong>
-</p>
+                                    <p style="margin:20px 0 8px;">
+                                        <strong>Status</strong>
+                                    </p>
+
+                                    <!-- Status / Primary Color -->
+                                    <p style="margin:0;font-size:15px;font-weight:600;color:#e85c13;">
+                                        {{statusLabel}}
+                                    </p>
 
 
-<p style="font-size:15px;line-height:1.7;">
-Please ensure any assigned resources, drivers, or delivery activities related to this order are stopped.
-</p>
+                                </td>
+                            </tr>
+
+                        </table>
 
 
-<p style="margin-top:40px;">
-Regards,<br>
-<strong>{{companyName}} Team</strong>
-</p>
+                        <!-- Call to Action / Primary Brand Color -->
+                        <div style="text-align:center;margin:35px 0;">
+
+                            <a
+                                    href="{{orderUrl}}"
+                                    style="background:#e85c13;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:bold;display:inline-block;">
+                                View Order Details
+                            </a>
+
+                        </div>
 
 
-</td>
-</tr>
+                        <p style="font-size:14px;color:#716f6b;line-height:1.7;">
+                            Cancelled by:
+                            <strong>{{updatedBy}}</strong>
+                        </p>
 
 
-<tr>
-<td style="background:#f9fafb;padding:20px;text-align:center;font-size:12px;color:#71717a;">
-This is an internal notification for {{companyName}} team members.
-</td>
-</tr>
+                        <p style="font-size:15px;line-height:1.7;">
+                            Please ensure any assigned resources, drivers, or delivery activities related to this order are stopped.
+                        </p>
 
 
-</table>
+                        <p style="margin-top:40px;">
+                            Regards,<br>
+                            <strong>{{companyName}} Team</strong>
+                        </p>
 
-</td>
-</tr>
+
+                    </td>
+                </tr>
+
+
+                <!-- Footer / Muted Background & Muted Text -->
+                <tr>
+                    <td style="background:#f6f5f3;padding:20px;text-align:center;font-size:12px;color:#716f6b;line-height:1.6;">
+                        This is an internal notification for {{companyName}} team members.
+                    </td>
+                </tr>
+
+
+            </table>
+
+        </td>
+    </tr>
 </table>
 
 </body>

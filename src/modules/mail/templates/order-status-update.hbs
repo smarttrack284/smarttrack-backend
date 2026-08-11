@@ -1,140 +1,149 @@
 <!doctype html>
 <html>
-  <body
-    style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#18181b;"
-  >
-    <table
-      role="presentation"
-      width="100%"
-      cellspacing="0"
-      cellpadding="0"
-      style="background:#f4f4f5;padding:32px 16px;"
-    >
-      <tr>
+<head>
+    <meta charset="UTF-8">
+    <title>Order Update</title>
+    <!-- Import DM Sans for email clients that support web fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+</head>
+<body
+        style="margin:0;padding:0;background:#fdfcfb;font-family:'DM Sans', ui-sans-serif, system-ui, Arial, sans-serif;color:#2b2a29;"
+>
+<table
+        role="presentation"
+        width="100%"
+        cellspacing="0"
+        cellpadding="0"
+        style="background:#fdfcfb;padding:32px 16px;"
+>
+    <tr>
         <td align="center">
-          <table
-            role="presentation"
-            width="600"
-            cellspacing="0"
-            cellpadding="0"
-            style="max-width:600px;background:#ffffff;border-radius:12px;border:1px solid #e4e4e7;overflow:hidden;"
-          >
+            <table
+                    role="presentation"
+                    width="600"
+                    cellspacing="0"
+                    cellpadding="0"
+                    style="max-width:600px;background:#ffffff;border-radius:12px;border:1px solid #e6e4df;overflow:hidden;"
+            >
 
-            <!-- Header -->
-            <tr>
-              <td
-                style="padding:28px 32px;border-bottom:1px solid #e4e4e7;"
-              >
-                <h2
-                  style="margin:0;font-size:22px;color:#18181b;"
-                >
-                  {{companyName}}
-                </h2>
-              </td>
-            </tr>
-
-            <!-- Content -->
-            <tr>
-              <td style="padding:32px;">
-                <p
-                  style="margin:0 0 16px;font-size:16px;line-height:1.6;"
-                >
-                  Hi {{customerName}},
-                </p>
-
-                <p
-                  style="margin:0 0 16px;font-size:16px;line-height:1.6;"
-                >
-                  We wanted to let you know that there has been an update to
-                  your order.
-                </p>
-
-                <div
-                  style="margin:24px 0;padding:16px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;"
-                >
-                  <p
-                    style="margin:0;font-size:14px;color:#71717a;"
-                  >
-                    Order Number
-                  </p>
-
-                  <p
-                    style="margin:6px 0 16px;font-size:16px;font-weight:600;"
-                  >
-                    #{{orderReference}}
-                  </p>
-
-                  <p
-                    style="margin:0;font-size:14px;color:#71717a;"
-                  >
-                    Current Status
-                  </p>
-
-                  <p
-                    style="margin:6px 0 0;font-size:18px;font-weight:600;color:#16a34a;"
-                  >
-                    {{statusLabel}}
-                  </p>
-                </div>
-
-                <p
-                  style="margin:0 0 24px;font-size:16px;line-height:1.6;"
-                >
-                  You can view your order details and track its progress using
-                  the button below.
-                </p>
-
-                <table role="presentation" cellspacing="0" cellpadding="0">
-                  <tr>
+                <!-- Header / White Background & Warm Border -->
+                <tr>
                     <td
-                      style="background:#16a34a;border-radius:8px;"
+                            style="padding:28px 32px;border-bottom:1px solid #e6e4df;"
                     >
-                      <a
-                        href="{{trackingUrl}}"
-                        style="display:inline-block;padding:12px 24px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;"
-                      >
-                        Track my order
-                      </a>
+                        <h2
+                                style="margin:0;font-size:22px;color:#2b2a29;"
+                        >
+                            {{companyName}}
+                        </h2>
                     </td>
-                  </tr>
-                </table>
+                </tr>
 
-                <p
-                  style="margin:32px 0 0;font-size:16px;line-height:1.6;"
-                >
-                  Thank you for choosing {{companyName}}. We appreciate your
-                  business and will continue working to provide you with the
-                  best service.
-                </p>
+                <!-- Content -->
+                <tr>
+                    <td style="padding:32px;">
+                        <p
+                                style="margin:0 0 16px;font-size:16px;line-height:1.6;"
+                        >
+                            Hi {{customerName}},
+                        </p>
 
-                <p
-                  style="margin:24px 0 0;font-size:16px;line-height:1.6;"
-                >
-                  Best regards,<br />
-                  <strong>{{companyName}} Team</strong>
-                </p>
-              </td>
-            </tr>
+                        <p
+                                style="margin:0 0 16px;font-size:16px;line-height:1.6;"
+                        >
+                            We wanted to let you know that there has been an update to
+                            your order.
+                        </p>
 
-            <!-- Footer -->
-            <tr>
-              <td
-                style="padding:20px 32px;background:#fafafa;border-top:1px solid #e4e4e7;text-align:center;font-size:12px;color:#71717a;"
-              >
-                Need help with your order?
-                Contact us at
-                <a
-                  href="mailto:{{supportEmail}}"
-                  style="color:#16a34a;text-decoration:none;"
-                >
-                  {{supportEmail}}
-                </a>
-              </td>
-            </tr>
+                        <!-- Order Details Box / Muted Background & Border -->
+                        <div
+                                style="margin:24px 0;padding:16px;background:#f6f5f3;border:1px solid #e6e4df;border-radius:8px;"
+                        >
+                            <p
+                                    style="margin:0;font-size:14px;color:#716f6b;"
+                            >
+                                Order Number
+                            </p>
 
-          </table>
+                            <p
+                                    style="margin:6px 0 16px;font-size:16px;font-weight:600;"
+                            >
+                                #{{orderReference}}
+                            </p>
+
+                            <p
+                                    style="margin:0;font-size:14px;color:#716f6b;"
+                            >
+                                Current Status
+                            </p>
+
+                            <!-- Status / Primary Color -->
+                            <p
+                                    style="margin:6px 0 0;font-size:18px;font-weight:600;color:#e85c13;"
+                            >
+                                {{statusLabel}}
+                            </p>
+                        </div>
+
+                        <p
+                                style="margin:0 0 24px;font-size:16px;line-height:1.6;"
+                        >
+                            You can view your order details and track its progress using
+                            the button below.
+                        </p>
+
+                        <!-- Call to Action / Primary Brand Color -->
+                        <table role="presentation" cellspacing="0" cellpadding="0">
+                            <tr>
+                                <td
+                                        style="background:#e85c13;border-radius:8px;"
+                                >
+                                    <a
+                                            href="{{trackingUrl}}"
+                                            style="display:inline-block;padding:12px 24px;color:#ffffff;font-size:15px;font-weight:600;text-decoration:none;"
+                                    >
+                                        Track my order
+                                    </a>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <p
+                                style="margin:32px 0 0;font-size:16px;line-height:1.6;"
+                        >
+                            Thank you for choosing {{companyName}}. We appreciate your
+                            business and will continue working to provide you with the
+                            best service.
+                        </p>
+
+                        <p
+                                style="margin:24px 0 0;font-size:16px;line-height:1.6;"
+                        >
+                            Best regards,<br />
+                            <strong>{{companyName}} Team</strong>
+                        </p>
+                    </td>
+                </tr>
+
+                <!-- Footer / Muted Background & Muted Text -->
+                <tr>
+                    <td
+                            style="padding:20px 32px;background:#f6f5f3;border-top:1px solid #e6e4df;text-align:center;font-size:12px;color:#716f6b;"
+                    >
+                        Need help with your order?
+                        Contact us at
+                        <a
+                                href="mailto:{{supportEmail}}"
+                                style="color:#e85c13;text-decoration:none;"
+                        >
+                            {{supportEmail}}
+                        </a>
+                    </td>
+                </tr>
+
+            </table>
         </td>
-      </tr>
-    </table>
-  </body>
+    </tr>
+</table>
+</body>
 </html>

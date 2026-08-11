@@ -17,10 +17,7 @@ import { startOfTodayInTimezone } from '#/common/utils/timezone-date.util';
 import { OrdersService } from '#/modules/orders/orders.service';
 import { OverviewEmitterService } from './overview-emitter.service';
 import { ActivityLogService } from '#/modules/activity-log/activity-log.service';
-import {
-  OrderPriority,
-  OrderStatus,
-} from '#/common/constants/order-status.constant';
+import { OrderPriority, OrderStatus, } from '#/common/constants/order-status.constant';
 import { TeamRoleType } from '#/common/types/team-role.type';
 import { TeamMemberStatus } from '#/common/constants/team-member-status.constant';
 import { UserRole } from '#/common/entities/user-role.entity';
@@ -346,7 +343,7 @@ export class OverviewService {
     for (const order of recentOrders) {
       events.push({
         id: `order-created-${order.id}`,
-        message: `Order ${order.orderReference} created for ${order.customerName}`,
+        message: `Order #${order.orderReference} created for ${order.customerName}`,
         timestamp: order.createdAt.toISOString(),
       });
     }

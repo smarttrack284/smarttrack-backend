@@ -3,110 +3,117 @@
 <head>
     <meta charset="UTF-8">
     <title>Team Invitation</title>
+    <!-- Import DM Sans for email clients that support web fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
 </head>
 
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;color:#18181b;">
+<body style="margin:0;padding:0;background:#fdfcfb;font-family:'DM Sans', ui-sans-serif, system-ui, Arial, sans-serif;color:#2b2a29;">
 
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f4f5;padding:40px 20px;">
-<tr>
-<td align="center">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fdfcfb;padding:40px 20px;">
+    <tr>
+        <td align="center">
 
-<table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background:#ffffff;border-radius:10px;overflow:hidden;">
+            <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background:#ffffff;border-radius:10px;overflow:hidden;">
 
-<tr>
-<td style="background:#16a34a;padding:28px;text-align:center;">
+                <!-- Header / Primary Brand Color -->
+                <tr>
+                    <td style="background:#e85c13;padding:28px;text-align:center;">
 
-<h1 style="margin:0;color:#ffffff;font-size:24px;">
-{{companyName}}
-</h1>
+                        <h1 style="margin:0;color:#ffffff;font-size:24px;">
+                            {{companyName}}
+                        </h1>
 
-<p style="margin:8px 0 0;color:#dcfce7;font-size:14px;">
-Team Invitation
-</p>
+                        <p style="margin:8px 0 0;color:#fdfcfb;font-size:14px;">
+                            Team Invitation
+                        </p>
 
-</td>
-</tr>
-
-
-<tr>
-<td style="padding:40px;">
-
-<p style="margin-top:0;font-size:16px;">
-Hello,
-</p>
+                    </td>
+                </tr>
 
 
-<p style="font-size:15px;line-height:1.7;">
-<strong>{{inviterName}}</strong> has invited you to join
-<strong>{{companyName}}</strong> on SmartTrack.
-</p>
+                <tr>
+                    <td style="padding:40px;">
+
+                        <p style="margin-top:0;font-size:16px;">
+                            Hello,
+                        </p>
 
 
-<p style="font-size:15px;line-height:1.7;">
-You have been invited to join the team as a:
-</p>
+                        <p style="font-size:15px;line-height:1.7;">
+                            <strong>{{inviterName}}</strong> has invited you to join
+                            <strong>{{companyName}}</strong> on SmartTrack.
+                        </p>
 
 
-<div style="margin:25px 0;padding:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;text-align:center;">
-
-<p style="margin:0;color:#166534;font-size:18px;font-weight:bold;">
-{{roleLabel}}
-</p>
-
-</div>
+                        <p style="font-size:15px;line-height:1.7;">
+                            You have been invited to join the team as a:
+                        </p>
 
 
-<p style="font-size:15px;line-height:1.7;">
-Accept this invitation to access the workspace and start collaborating with the {{companyName}} team.
-</p>
+                        <!-- Role Box / Muted Background & Border -->
+                        <div style="margin:25px 0;padding:16px;background:#f6f5f3;border:1px solid #e6e4df;border-radius:8px;text-align:center;">
+
+                            <!-- Role Title / Primary Color -->
+                            <p style="margin:0;color:#e85c13;font-size:18px;font-weight:bold;">
+                                {{roleLabel}}
+                            </p>
+
+                        </div>
 
 
-<div style="text-align:center;margin:35px 0;">
-
-<a
-href="{{acceptUrl}}"
-style="background:#16a34a;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:bold;display:inline-block;">
-Accept Invitation
-</a>
-
-</div>
+                        <p style="font-size:15px;line-height:1.7;">
+                            Accept this invitation to access the workspace and start collaborating with the {{companyName}} team.
+                        </p>
 
 
-<p style="font-size:14px;line-height:1.7;color:#52525b;">
-If you were not expecting this invitation, you can safely ignore this email.
-No changes will be made to your account.
-</p>
+                        <!-- Call to Action / Primary Brand Color -->
+                        <div style="text-align:center;margin:35px 0;">
+
+                            <a
+                                    href="{{acceptUrl}}"
+                                    style="background:#e85c13;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:bold;display:inline-block;">
+                                Accept Invitation
+                            </a>
+
+                        </div>
 
 
-<p style="margin-top:40px;font-size:15px;">
-Regards,<br>
-<strong>{{companyName}} Team</strong>
-</p>
+                        <p style="font-size:14px;line-height:1.7;color:#716f6b;">
+                            If you were not expecting this invitation, you can safely ignore this email.
+                            No changes will be made to your account.
+                        </p>
 
 
-</td>
-</tr>
+                        <p style="margin-top:40px;font-size:15px;">
+                            Regards,<br>
+                            <strong>{{companyName}} Team</strong>
+                        </p>
 
 
-<tr>
-<td style="background:#f9fafb;padding:20px;text-align:center;font-size:12px;color:#71717a;line-height:1.6;">
-
-<p style="margin:0;">
-This invitation was sent through SmartTrack.
-</p>
-
-<p style="margin:6px 0 0;">
-Securely manage your team's operations with SmartTrack.
-</p>
-
-</td>
-</tr>
+                    </td>
+                </tr>
 
 
-</table>
+                <!-- Footer / Muted Background & Muted Text -->
+                <tr>
+                    <td style="background:#f6f5f3;padding:20px;text-align:center;font-size:12px;color:#716f6b;line-height:1.6;">
 
-</td>
-</tr>
+                        <p style="margin:0;">
+                            This invitation was sent through SmartTrack.
+                        </p>
+
+                        <p style="margin:6px 0 0;">
+                            Securely manage your team's operations with SmartTrack.
+                        </p>
+
+                    </td>
+                </tr>
+
+
+            </table>
+
+        </td>
+    </tr>
 </table>
 
 </body>

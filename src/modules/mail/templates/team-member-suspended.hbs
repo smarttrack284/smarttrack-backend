@@ -3,15 +3,17 @@
 <head>
     <meta charset="UTF-8" />
     <title>Team Member Suspended</title>
+    <!-- Import DM Sans for email clients that support web fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
 </head>
 
 <body
         style="
     margin:0;
     padding:32px;
-    background:#f4f4f5;
-    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-    color:#18181b;
+    background:#fdfcfb;
+    font-family:'DM Sans', ui-sans-serif, system-ui, Arial, sans-serif;
+    color:#2b2a29;
   "
 >
 <table
@@ -32,14 +34,15 @@
     background:#ffffff;
     border-radius:12px;
     overflow:hidden;
-    border:1px solid #e4e4e7;
+    border:1px solid #e6e4df;
   "
             >
 
+                <!-- Header / Primary Brand Color -->
                 <tr>
                     <td
                             style="
-    background:#d97706;
+    background:#e85c13;
     color:#ffffff;
     padding:28px;
     text-align:center;
@@ -59,7 +62,7 @@
                                 style="
     margin:10px 0 0;
     font-size:15px;
-    opacity:.95;
+    color:#fdfcfb;
   "
                         >
                             Your workspace access status has changed.
@@ -78,14 +81,15 @@
                             Your access to <strong>{{companyName}}</strong> has been temporarily suspended by a workspace administrator.
                         </p>
 
+                        <!-- Suspension Details Box / Muted Background & Border -->
                         <table
                                 role="presentation"
                                 cellpadding="0"
                                 cellspacing="0"
                                 width="100%"
                                 style="
-    background:#f9fafb;
-    border:1px solid #e5e7eb;
+    background:#f6f5f3;
+    border:1px solid #e6e4df;
     border-radius:8px;
     margin:24px 0;
   "
@@ -94,7 +98,7 @@
                             <tr>
                                 <td style="padding:18px;">
 
-                                    <p style="margin:0 0 12px;">
+                                    <p style="margin:0 0 12px; color:#e85c13;">
                                         <strong>Suspension Details</strong>
                                     </p>
 
@@ -114,7 +118,7 @@
                         <p
                                 style="
     margin:28px 0 0;
-    color:#52525b;
+    color:#716f6b;
     line-height:1.7;
   "
                         >
@@ -124,13 +128,15 @@
                     </td>
                 </tr>
 
+                <!-- Footer / Muted Background & Muted Text -->
                 <tr>
                     <td
                             style="
-    border-top:1px solid #e4e4e7;
+    background:#f6f5f3;
+    border-top:1px solid #e6e4df;
     padding:24px;
     font-size:13px;
-    color:#71717a;
+    color:#716f6b;
     text-align:center;
     line-height:1.6;
   "

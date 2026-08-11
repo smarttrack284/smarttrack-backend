@@ -3,95 +3,115 @@
 <head>
     <meta charset="UTF-8">
     <title>We Couldn't Complete Your Delivery</title>
+    <!-- Import DM Sans for email clients that support web fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
 </head>
 
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;color:#18181b;">
+<body style="margin:0;padding:0;background:#fdfcfb;font-family:'DM Sans', ui-sans-serif, system-ui, Arial, sans-serif;color:#2b2a29;">
 
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f4f5;padding:40px 20px;">
-<tr>
-<td align="center">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fdfcfb;padding:40px 20px;">
+    <tr>
+        <td align="center">
 
-<table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background:#ffffff;border-radius:10px;overflow:hidden;">
+            <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background:#ffffff;border-radius:10px;overflow:hidden;">
 
-<tr>
-<td style="background:#16a34a;padding:24px;text-align:center;">
-<h1 style="margin:0;color:#ffffff;font-size:24px;">
-{{companyName}}
-</h1>
-</td>
-</tr>
+                <!-- Header / Primary Brand Color -->
+                <tr>
+                    <td style="background:#e85c13;padding:24px;text-align:center;">
+                        <h1 style="margin:0;color:#ffffff;font-size:24px;">
+                            {{companyName}}
+                        </h1>
+                    </td>
+                </tr>
 
-<tr>
-<td style="padding:40px;">
+                <tr>
+                    <td style="padding:40px;">
 
-<p style="margin-top:0;font-size:16px;">
-Hello <strong>{{customerName}}</strong>,
-</p>
+                        <p style="margin-top:0;font-size:16px;">
+                            Hello <strong>{{customerName}}</strong>,
+                        </p>
 
-<p style="font-size:15px;line-height:1.7;">
-Unfortunately, we were unable to complete the delivery of your order.
-</p>
+                        <p style="font-size:15px;line-height:1.7;">
+                            Unfortunately, we were unable to complete the delivery of your order.
+                        </p>
 
-<p style="font-size:15px;line-height:1.7;">
-This doesn't necessarily mean your order has been cancelled. Our team may need additional information or may be arranging the next steps to resolve the issue.
-</p>
+                        <p style="font-size:15px;line-height:1.7;">
+                            This doesn't necessarily mean your order has been cancelled. Our team may need additional information or may be arranging the next steps to resolve the issue.
+                        </p>
 
-<table width="100%" cellspacing="0" cellpadding="0" style="margin:30px 0;background:#f9fafb;border:1px solid #e4e4e7;border-radius:8px;">
-<tr>
-<td style="padding:20px;">
+                        <!-- Order Details Box / Muted Background & Border -->
+                        <table width="100%" cellspacing="0" cellpadding="0" style="margin:30px 0;background:#f6f5f3;border:1px solid #e6e4df;border-radius:8px;">
+                            <tr>
+                                <td style="padding:20px;">
 
-<p style="margin:0 0 10px;">
-<strong>Order Reference</strong>
-</p>
+                                    <p style="margin:0 0 10px;">
+                                        <strong>Order Reference</strong>
+                                    </p>
 
-<p style="margin:0;font-size:18px;font-weight:bold;color:#16a34a;">
-{{orderReference}}
-</p>
+                                    <!-- Highlight / Primary Color -->
+                                    <p style="margin:0;font-size:18px;font-weight:bold;color:#e85c13;">
+                                        #{{orderReference}}
+                                    </p>
 
-<p style="margin:20px 0 10px;">
-<strong>Current Status</strong>
-</p>
+                                    <p style="margin:20px 0 10px;">
+                                        <strong>Current Status</strong>
+                                    </p>
 
-<p style="margin:0;font-size:16px;font-weight:600;color:#dc2626;">
-{{statusLabel}}
-</p>
+                                    <!-- Status / Destructive Color -->
+                                    <p style="margin:0;font-size:16px;font-weight:600;color:#d92d20;">
+                                        {{statusLabel}}
+                                    </p>
 
-</td>
-</tr>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <!-- Call to Action / Primary Brand Color -->
+                        <div style="text-align:center;margin:35px 0;">
+
+                            <a
+                                    href="{{trackingUrl}}"
+                                    style="background:#e85c13;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:bold;display:inline-block;">
+                                View Order Status
+                            </a>
+
+                        </div>
+
+                        <p style="font-size:15px;line-height:1.7;">
+                            If you have any questions or would like assistance, please contact our support team. We'll be happy to help and discuss the available options.
+                        </p>
+
+                        <p style="font-size:15px;line-height:1.7;">
+                            Email us at
+                            <a href="mailto:{{supportEmail}}" style="color:#e85c13;text-decoration:none;">
+                                {{supportEmail}}
+                            </a>.
+                        </p>
+
+                        <p style="margin-top:40px;">
+                            We sincerely apologize for the inconvenience and appreciate your patience.
+                        </p>
+
+                        <p style="margin-top:24px;">
+                            Kind regards,<br>
+                            <strong>The {{companyName}} Team</strong>
+                        </p>
+
+                    </td>
+                </tr>
+
+                <!-- Footer / Muted Background & Muted Text -->
+                <tr>
+                    <td style="background:#f6f5f3;padding:20px;text-align:center;font-size:12px;color:#716f6b;line-height:1.6;">
+                        This email is an automated notification regarding your order with {{companyName}}.
+                    </td>
+                </tr>
+
+            </table>
+
+        </td>
+    </tr>
 </table>
 
-<div style="text-align:center;margin:35px 0;">
-
-<a
-href="{{trackingUrl}}"
-style="background:#16a34a;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:bold;display:inline-block;">
-View Order Status
-</a>
-
-</div>
-
-<p style="font-size:15px;line-height:1.7;">
-If you have any questions or would like assistance, please contact our support team. We'll be happy to help and discuss the available options.
-</p>
-
-<p style="font-size:15px;line-height:1.7;">
-Email us at
-<a href="mailto:{{supportEmail}}" style="color:#16a34a;text-decoration:none;">
-{{supportEmail}}
-</a>.
-</p>
-
-<p style="margin-top:40px;">
-We sincerely apologize for the inconvenience and appreciate your patience.
-</p>
-
-<p style="margin-top:24px;">
-Kind regards,<br>
-<strong>The {{companyName}} Team</strong>
-</p>
-
-</td>
-</tr>
-
-<tr>
-<td style="background:#f
+</body>
+</html>
