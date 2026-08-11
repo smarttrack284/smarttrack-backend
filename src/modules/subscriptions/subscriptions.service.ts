@@ -25,6 +25,11 @@ import {
     rule
 } from "#/common/errors/error-handler.service";
 import { RedisCacheService } from "#/common/cache/redis-cache.service";
+import { MailService } from "#/modules/mail/mail.service";
+import { UserRole } from "#/common/entities/user-role.entity";
+import { Company } from "#/common/entities/company.entity";
+import { ConfigService } from "@nestjs/config";
+import { MailTemplate } from "#/modules/mail/interfaces/mail-template.interface";
 
 @Injectable()
 export class SubscriptionsService {
@@ -34,8 +39,13 @@ export class SubscriptionsService {
         @InjectDataSource() private readonly dataSource: DataSource,
         @InjectRepository(Subscription)
         private readonly subscriptionRepo: Repository<Subscription>,
+
+        @InjectRepository(UserRole)
+        private readonly userRoleRepo: Repository<UserRole>,
         private readonly errorHandler: ErrorHandlerService,
-        private readonly cache: RedisCacheService
+        private readonly cache: RedisCacheService,
+        private readonly config: ConfigService,
+        private readonly mailService: MailService
     ) {}
 
     /**
@@ -239,8 +249,21 @@ export class SubscriptionsService {
             });
             if (!subscription) return;
 
+            const wasAlreadyPastDue =
+                subscription.status === SubscriptionStatus.PAST_DUE;
+
             subscription.status = SubscriptionStatus.PAST_DUE;
-            await this.save(subscription);
+            await this.subscriptionRepo.save(subscription);
+
+            // Invalidate cache
+            await this.cache.del(
+                `plan-guard:subscription:${subscription.companyId}`
+            );
+
+            // Send owner notification only the first time it becomes past due
+            if (!wasAlreadyPastDue) {
+                await this.sendPaymentFailedNotification(subscription);
+            }
         } catch (err) {
             this.logger.error({
                 msg: `Failed to mark subscription past due for Paystack code ${paystackSubscriptionCode}`,
@@ -327,9 +350,60 @@ export class SubscriptionsService {
             this.logger.error({
                 msg: `Failed to invalidate PlanGuard cache for company ${companyId}`,
                 err: (err as Error).message,
-                stack: (err as Error).stack,
+                stack: (err as Error).stack
             });
             // Non‑critical – cache will expire on its own in 60s
+        }
+    }
+
+    private async sendPaymentFailedNotification(
+        subscription: Subscription
+    ): Promise<void> {
+        try {
+            // Find owner
+            const ownerRole = await this.userRoleRepo.findOne({
+                where: {
+                    companyId: subscription.companyId,
+                    role: TeamRoleType.OWNER
+                }
+            });
+            if (!ownerRole?.email) return;
+
+            // Fetch company name
+            const company = await this.dataSource
+                .getRepository(Company)
+                .findOne({
+                    where: { id: subscription.companyId }
+                });
+            const companyName = company?.name ?? "SmartTrack";
+
+            const planName =
+                subscription.plan === SubscriptionPlan.PRO ? "Pro" : "Starter";
+            const renewalUrl = `${this.config.get(
+                "CLIENT_URL"
+            )}/dashboard/billing`;
+            const supportEmail =
+                this.config.get("SUPPORT_EMAIL") ?? "help@smarttrack.com";
+
+            await this.mailService.sendTemplateEmail({
+                to: ownerRole.email,
+                subject: `Payment failed for your ${planName} plan`,
+                templateName: MailTemplate.SUBSCRIPTION_PAYMENT_FAILED,
+                context: {
+                    companyName,
+                    customerName: ownerRole.name ?? "there",
+                    planName,
+                    renewalUrl,
+                    supportEmail,
+                    year: new Date().getFullYear()
+                }
+            });
+        } catch (err) {
+            this.logger.error({
+                msg: `Failed to send payment failed email for company ${subscription.companyId}`,
+                err: (err as Error).message,
+                stack: (err as Error).stack
+            });
         }
     }
 

@@ -28,9 +28,11 @@ export enum MailTemplate {
     TEAM_ORDER_CANCELLED = "team-order-cancelled",
     TEAM_MEMBER_SUSPENDED = "team-member-suspended",
     TEAM_MEMBER_ACTIVATED = "team-member-activated",
+    TEAM_MEMBER_ROLE_CHANGED = "team-member-role-changed",
 
     /* Subscriptions */
-    SUBSCRIPTION_EXPIRING = "subscription-expiring"
+    SUBSCRIPTION_EXPIRING = "subscription-expiring",
+    SUBSCRIPTION_PAYMENT_FAILED = "subscription-payment-failed"
 }
 
 /**
@@ -95,6 +97,16 @@ export type TeamMemberActivatedContext = {
     year: number;
 };
 
+export type TeamMemberRoleChangedContext = {
+    companyName: string;
+    memberName: string;
+    memberEmail: string;
+    newRole: string;
+    teamUrl: string;
+    supportEmail: string;
+    year: number;
+};
+
 /* Subscriptions */
 
 export type SubscriptionExpiringContext = {
@@ -102,6 +114,15 @@ export type SubscriptionExpiringContext = {
     customerName: string;
     planName: string;
     expiryDate: string;
+    renewalUrl: string;
+    supportEmail: string;
+    year: number;
+};
+
+export type SubscriptionPaymentFailedContext = {
+    companyName: string;
+    customerName: string;
+    planName: string;
     renewalUrl: string;
     supportEmail: string;
     year: number;
@@ -127,6 +148,7 @@ export type MailTemplateContextMap = {
     [MailTemplate.TEAM_MEMBER_ACCEPTED]: TeamMemberAcceptedContext;
     [MailTemplate.TEAM_MEMBER_SUSPENDED]: TeamMemberSuspendedContext;
     [MailTemplate.TEAM_MEMBER_ACTIVATED]: TeamMemberActivatedContext;
+    [MailTemplate.TEAM_MEMBER_ROLE_CHANGED]: TeamMemberRoleChangedContext;
 
     /**
      * Customer
@@ -152,4 +174,8 @@ export type MailTemplateContextMap = {
 
     /* Subscriptions */
     [MailTemplate.SUBSCRIPTION_EXPIRING]: SubscriptionExpiringContext;
+    
+      [MailTemplate.SUBSCRIPTION_PAYMENT_FAILED]: SubscriptionPaymentFailedContext;
+
 };
+

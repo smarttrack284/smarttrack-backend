@@ -100,8 +100,8 @@ export class ActivityLogService {
             // the business operation that triggered the event.
             this.logger.error({
                 msg: `Failed to record activity log for company ${input.companyId}`,
-                err: err instanceof Error ? err.message : new
-                Error(String(err)),
+                err:
+                    err instanceof Error ? err.message : new Error(String(err)),
                 stack: (err as Error).stack
             });
         }
@@ -114,7 +114,7 @@ export class ActivityLogService {
         void this.record({
             companyId: event.payload.companyId,
             category: ActivityCategory.ORDER,
-            eventType: "order.created",
+            eventType: ORDER_EVENTS.CREATED,
             message: "A new order was created"
         });
     }
@@ -143,7 +143,7 @@ export class ActivityLogService {
         void this.record({
             companyId: event.payload.companyId,
             category: ActivityCategory.ORDER,
-            eventType: "order.deleted",
+            eventType: ORDER_EVENTS.DELETED,
             severity: ActivitySeverity.WARNING,
             message: "An order was deleted"
         });
@@ -156,7 +156,7 @@ export class ActivityLogService {
         void this.record({
             companyId: event.companyId,
             category: ActivityCategory.ORDER,
-            eventType: "order.bulk_imported",
+            eventType: ORDER_EVENTS.BULK_IMPORTED,
             severity: hasFailures
                 ? ActivitySeverity.WARNING
                 : ActivitySeverity.INFO,
@@ -175,7 +175,7 @@ export class ActivityLogService {
         void this.record({
             companyId: event.companyId,
             category: ActivityCategory.DRIVER,
-            eventType: "driver.arrived",
+            eventType: STOP_EVENTS.ARRIVED,
             message: `Arrived — ${event.customerName}
             (#${event.orderReference}), arrived on ${event.arrivedAt}`
         });
@@ -186,7 +186,7 @@ export class ActivityLogService {
         void this.record({
             companyId: event.companyId,
             category: ActivityCategory.DRIVER,
-            eventType: "driver.delivered",
+            eventType: STOP_EVENTS.COMPLETED,
             message: `Delivered — ${event.customerName} (#${event.orderReference})`
         });
     }
@@ -196,7 +196,7 @@ export class ActivityLogService {
         void this.record({
             companyId: event.companyId,
             category: ActivityCategory.DRIVER,
-            eventType: "driver.skipped",
+            eventType: STOP_EVENTS.SKIPPED,
             severity: ActivitySeverity.WARNING,
             message: `Skipped — ${event.customerName} (#${event.orderReference}): ${event.reason}`
         });
@@ -207,7 +207,7 @@ export class ActivityLogService {
         void this.record({
             companyId: event.payload.companyId,
             category: ActivityCategory.TEAM,
-            eventType: "team.invited",
+            eventType: TEAM_EVENTS.INVITE_MEMBER,
             message: `${event.payload.inviteEmail} was invited as ${event.payload.roleLabel}`
         });
     }
@@ -217,7 +217,7 @@ export class ActivityLogService {
         void this.record({
             companyId: event.payload.companyId,
             category: ActivityCategory.TEAM,
-            eventType: "team.joined",
+            eventType: TEAM_EVENTS.MEMBER_ACCEPTED,
             message: `${event.payload.memberName} joined the team`
         });
     }
@@ -227,7 +227,7 @@ export class ActivityLogService {
         void this.record({
             companyId: event.companyId,
             category: ActivityCategory.TEAM,
-            eventType: "team.role_changed",
+            eventType: TEAM_EVENTS.ROLE_CHANGED,
             message: `${event.memberName}'s role changed to ${event.newRole}`
         });
     }
@@ -237,7 +237,7 @@ export class ActivityLogService {
         void this.record({
             companyId: event.companyId,
             category: ActivityCategory.TEAM,
-            eventType: "team.removed",
+            eventType: TEAM_EVENTS.REVOKED,
             severity: ActivitySeverity.WARNING,
             message: `${event.memberName} was removed from the team`
         });
@@ -248,7 +248,7 @@ export class ActivityLogService {
         void this.record({
             companyId: event.companyId,
             category: ActivityCategory.API_KEY,
-            eventType: "api_key.created",
+            eventType: API_KEY_EVENTS.CREATED,
             message: `API key "${event.keyName}" was created`
         });
     }
@@ -258,7 +258,7 @@ export class ActivityLogService {
         void this.record({
             companyId: event.companyId,
             category: ActivityCategory.API_KEY,
-            eventType: "api_key.revoked",
+            eventType: API_KEY_EVENTS.REVOKED,
             severity: ActivitySeverity.WARNING,
             message: `API key "${event.keyName}" was revoked`
         });
@@ -269,7 +269,7 @@ export class ActivityLogService {
         void this.record({
             companyId: event.companyId,
             category: ActivityCategory.DRIVER,
-            eventType: "driver.online",
+            eventType: DRIVER_PRESENCE_EVENTS.ONLINE,
             message: `${event.driverName} went online`
         });
     }
@@ -279,7 +279,7 @@ export class ActivityLogService {
         void this.record({
             companyId: event.companyId,
             category: ActivityCategory.DRIVER,
-            eventType: "driver.offline",
+            eventType: DRIVER_PRESENCE_EVENTS.OFFLINE,
             severity: event.hadActiveStops
                 ? ActivitySeverity.WARNING
                 : ActivitySeverity.INFO,

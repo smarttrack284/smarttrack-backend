@@ -69,7 +69,7 @@ export class TeamMemberActivatedEvent {
 export const TEAM_EVENTS = {
   MEMBER_ACCEPTED: 'team.member-accepted',
   INVITE_MEMBER: 'team.invite-member',
-  ROLE_CHANGED: 'team.role_changed',
+  ROLE_CHANGED: 'team.role-changed',
   REMOVED: 'team.removed',
   MEMBER_SUSPENDED: 'team.member-suspended',
   MEMBER_ACTIVATED: 'team.member-activated',
@@ -92,6 +92,7 @@ export class TeamMemberRoleChangedEvent {
     public readonly companyId: string,
     public readonly memberName: string,
     public readonly newRole: string,
+    public readonly memberEmail: string,
   ) {}
 }
 

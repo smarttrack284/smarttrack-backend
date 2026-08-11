@@ -15,6 +15,7 @@ import { CustomerNotificationsService } from "./customer-notifications.service";
 import { TeamNotificationsService } from "./team-notifications.service";
 import {
     TEAM_EVENTS,
+    TeamMemberRoleChangedEvent,
     TeamInviteMemberEvent,
     TeamMemberAcceptedEvent,
     TeamMemberActivatedEvent,
@@ -203,6 +204,23 @@ export class NotificationsService {
         }
     }
 
+    @OnEvent(TEAM_EVENTS.ROLE_CHANGED)
+    async handleTeamMemberRoleChanged(
+        event: TeamMemberRoleChangedEvent
+    ): Promise<void> {
+        try {
+            await this.teamNotificationsService.handleTeamMemberRoleChanged(
+                event
+            );
+        } catch (err) {
+            this.logger.error({
+                msg: `handleTeamMemberRoleChanged failed for company ${event.companyId}`,
+                err: (err as Error).message,
+                stack: (err as Error).stack,
+            });
+        }
+    }
+
     /* ---------- Helpers ---------- */
 
     private async getCompanyNotificationSettings(
@@ -213,11 +231,10 @@ export class NotificationsService {
                 where: { companyId }
             });
         } catch (err) {
-            this.logger.error(
-              {
-               msg: `Failed to load notification settings for company ${companyId}`,
-               stack: (err as Error).stack
-           } );
+            this.logger.error({
+                msg: `Failed to load notification settings for company ${companyId}`,
+                stack: (err as Error).stack
+            });
             return null; // safe fallback: skip all notifications for this company
         }
     }

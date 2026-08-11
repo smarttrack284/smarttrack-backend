@@ -1,9 +1,17 @@
-import {ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger,} from '@nestjs/common';
-import type {FastifyReply, FastifyRequest} from 'fastify';
+import {
+  ArgumentsHost,
+  Catch,
+  ExceptionFilter,
+  HttpException,
+  HttpStatus,
+  Logger,
+} from '@nestjs/common';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import * as Sentry from '@sentry/node';
-import {AppException} from '#/common/exceptions/app.exception';
-import {ErrorCode} from '#/common/constants/error-code-enum';
-import {buildErrorResponse} from '../utils/error-response.util';
+import { AppException } from '#/common/exceptions/app.exception';
+import { InternalErrorException } from '#/common/exceptions/internal-error.exception';
+import { ErrorCode } from '#/common/constants/error-code-enum';
+import { buildErrorResponse } from '../utils/error-response.util';
 
 type ResolvedError = {
   status: number;
@@ -26,8 +34,12 @@ type ResolvedError = {
  * - Only errors with a resolved status >= 500 (unexpected, bugs) are sent to
  *   Sentry. Expected business errors (4xx, including AppException subclasses)
  *   are intentionally NOT reported to keep the Sentry dashboard clean and
- *   focused on real problems. User context (id, email, company) is set in
- *   the SupabaseAuthGuard and automatically attached to any captured event.
+ *   focused on real problems.
+ * - When an InternalErrorException wraps an underlying cause, Sentry receives
+ *   the original cause so the stack trace points to the actual fault, not the
+ *   generic wrapper.
+ * - User context (id, email, company) is set in the SupabaseAuthGuard and
+ *   automatically attached to any captured event.
  */
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -65,7 +77,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     // ---------- Sentry: only report real problems (5xx / unknown) ----------
     if (resolved.status >= 500) {
-      Sentry.captureException(exception);
+      // If the exception is an InternalErrorException with an underlying cause,
+      // capture the original error so Sentry has the full stack trace.
+      const captureError =
+        exception instanceof InternalErrorException &&
+        exception.cause instanceof Error
+          ? exception.cause
+          : exception instanceof Error
+            ? exception
+            : new Error(String(exception));
+
+      Sentry.captureException(captureError);
     }
     // -----------------------------------------------------------------------
 

@@ -1025,26 +1025,64 @@ export class DispatchService {
         const page = query.page ?? 1;
         const pageSize = query.pageSize ?? 20;
 
-        // Initialize the QueryBuilder and join relations
         const qb = this.tripRepo
             .createQueryBuilder("trip")
-            .leftJoinAndSelect("trip.stops", "stop")
-            .leftJoinAndSelect("stop.order", "order")
+            .select([
+                "trip.id",
+                "trip.companyId",
+                "trip.driverUserId",
+                "trip.tripReference",
+                "trip.createdAt",
+                "trip.etaMinutes",
+                "trip.etaCalculatedAt",
+                "trip.etaSource",
+                "trip.driverLocationLat",
+                "trip.driverLocationLng",
+                "trip.driverLocationAccuracy",
+                "trip.driverSpeedKph",
+                "trip.driverHeading",
+                "trip.driverLocationUpdatedAt"
+            ])
+            .leftJoin("trip.stops", "stop")
+            .addSelect([
+                "stop.id",
+                "stop.tripId",
+                "stop.orderId",
+                "stop.sequence",
+                "stop.status",
+                "stop.arrivedAt",
+                "stop.completedAt",
+                "stop.skipReason",
+                "stop.skipNote"
+            ])
+            .leftJoin("stop.order", "order")
+            .addSelect([
+                "order.id",
+                "order.trackingNumber",
+                "order.orderReference",
+                "order.customerName",
+                "order.customerPhone",
+                "order.pickupLocation",
+                "order.dropoffLocation",
+                "order.priority",
+                "order.status"
+            ])
             .where("trip.companyId = :companyId", { companyId })
             .orderBy("trip.createdAt", "DESC");
 
-        // Apply customer search filter if present
         if (query.search) {
             qb.andWhere(
                 new Brackets(sqb => {
                     sqb.where("LOWER(order.customerName) LIKE LOWER(:search)", {
                         search: `%${query.search}%`
-                    });
+                    }).orWhere(
+                        "LOWER(trip.tripReference) LIKE LOWER(:search)",
+                        { search: `%${query.search}%` }
+                    );
                 })
             );
         }
 
-        // Execute the query
         const trips = await qb.getMany();
 
         // In-memory filter for derived status

@@ -48,9 +48,24 @@ export class AuthService {
                     email,
                     password
                 });
-            if (error || !data.session) {
+
+            // Check for the specific ban error from Supabase
+            if (error) {
+                if (
+                    error.message.includes( "User is banned") ||
+                    error.message.includes("This user is banned")
+                ) {
+                    throw new ForbiddenAppException(
+                        "Your account has been suspended. Please contact your administrator."
+                    );
+                }
                 throw new UnauthorizedAppException("Invalid credentials");
             }
+
+            if (!data.session) {
+                throw new UnauthorizedAppException("Invalid credentials");
+            }
+
             return { session: data.session };
         } catch (err) {
             this.errorHandler.handle(err, "AuthService.login", [
@@ -64,7 +79,6 @@ export class AuthService {
             ]);
         }
     }
-
     async signup(email: string, password: string, fullName: string) {
         try {
             const { data, error } = await this.supabaseAdmin.auth.signUp({

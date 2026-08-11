@@ -2,8 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Your Order Has Been Picked Up</title>
-    <!-- Import DM Sans for email clients that support web fonts -->
+    <title>Your Role Has Been Updated</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
 </head>
 
@@ -15,9 +14,9 @@
 
             <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background:#ffffff;border-radius:10px;overflow:hidden;">
 
-                <!-- Header / Primary Brand Color -->
+                <!-- Header -->
                 <tr>
-                    <td style="background:#e85c13;padding:24px;text-align:center;">
+                    <td style="background:#16a34a;padding:24px;text-align:center;">
                         <h1 style="margin:0;color:#ffffff;font-size:24px;">
                             {{companyName}}
                         </h1>
@@ -28,73 +27,56 @@
                     <td style="padding:40px;">
 
                         <p style="margin-top:0;font-size:16px;">
-                            Hello <strong>{{customerName}}</strong>,
+                            Hello <strong>{{memberName}}</strong>,
                         </p>
 
                         <p style="font-size:15px;line-height:1.7;">
-                            Your order has been <strong>picked up</strong> and is now on its way to its destination.
+                            Your role at <strong>{{companyName}}</strong> has been updated to <strong>{{newRole}}</strong>.
                         </p>
 
                         <p style="font-size:15px;line-height:1.7;">
-                            Our delivery team is working to ensure your order arrives safely and as quickly as possible. You can follow its progress anytime using the tracking link below.
+                            This change may affect the features and information you can access.
+                            If you have any questions, please contact your administrator.
                         </p>
 
-                        <!-- Order Details Box / Muted Background & Border -->
+                        <!-- Role Details Box -->
                         <table width="100%" cellspacing="0" cellpadding="0" style="margin:30px 0;background:#f6f5f3;border:1px solid #e6e4df;border-radius:8px;">
                             <tr>
                                 <td style="padding:20px;">
 
                                     <p style="margin:0 0 10px;">
-                                        <strong>Order Reference</strong>
+                                        <strong>Your New Role</strong>
                                     </p>
 
-                                    <!-- Highlight / Primary Color -->
-                                    <p style="margin:0;font-size:18px;font-weight:bold;color:#e85c13;">
-                                        #{{orderReference}}
+                                    <p style="margin:0;font-size:18px;font-weight:bold;color:#16a34a;">
+                                        {{newRole}}
                                     </p>
 
-                                    <p style="margin:20px 0 10px;">
-                                        <strong>Current Status</strong>
+                                    {{#if memberEmail}}
+                                    <p style="margin:20px 0 0 0; font-size:14px; color:#716f6b;">
+                                        Connected account: {{memberEmail}}
                                     </p>
-
-                                    <!-- Status / Primary Color -->
-                                    <p style="margin:0;font-size:16px;font-weight:600;color:#e85c13;">
-                                        {{statusLabel}}
-                                    </p>
+                                    {{/if}}
 
                                 </td>
                             </tr>
                         </table>
 
-                        <!-- Call to Action / Primary Brand Color -->
-                        <div style="text-align:center;margin:35px 0;">
-
-                            <a
-                                    href="{{trackingUrl}}"
-                                    style="background:#e85c13;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:bold;display:inline-block;">
-                                Track Your Order
-                            </a>
-
-                        </div>
 
                         <p style="font-size:15px;line-height:1.7;">
-                            We'll continue to keep you informed as your delivery progresses.
-                        </p>
-
-                        <p style="font-size:15px;line-height:1.7;">
-                            If you have any questions about your order, please contact us at
-                            <a href="mailto:{{supportEmail}}" style="color:#e85c13;text-decoration:none;">
+                            Need assistance? Contact us at
+                            <a href="mailto:{{supportEmail}}" style="color:#16a34a;text-decoration:none;">
                                 {{supportEmail}}
                             </a>.
                         </p>
 
                         <p style="margin-top:40px;">
-                            Thank you for choosing <strong>{{companyName}}</strong>.
+                            Thank you for being part of <strong>{{companyName}}</strong>.
                         </p>
 
                         <p style="margin-top:24px;">
                             Kind regards,<br>
-                            <strong>The {{companyName}} Team</strong>
+                            <strong>{{companyName}}</strong>
                         </p>
 
                     </td>

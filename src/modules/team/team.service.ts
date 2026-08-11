@@ -541,8 +541,9 @@ export class TeamService {
                 TEAM_EVENTS.ROLE_CHANGED,
                 new TeamMemberRoleChangedEvent(
                     companyId,
-                    member.name ?? member.email,
-                    dto.role
+                    member.name,
+                    dto.role,
+                    member.email
                 )
             );
         } catch (err) {
