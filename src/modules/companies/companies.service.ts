@@ -4,7 +4,8 @@ import {
     DataSource,
     EntityManager,
     QueryFailedError,
-    Repository
+    Repository,
+    In
 } from "typeorm";
 import { Company } from "#/common/entities/company.entity";
 import {
@@ -12,6 +13,8 @@ import {
     ResourceConflictException,
     ResourceNotFoundException
 } from "#/common/exceptions";
+import { User } from "@supabase/supabase-js";
+
 import { CreateCompanyDto } from "./dto/create-company.dto";
 import { UpdateCompanyDto } from "./dto/update-company.dto";
 import { UsersService } from "#/modules/users/users.service";
@@ -23,6 +26,7 @@ import { TeamMemberStatus } from "#/common/constants/team-member-status.constant
 import { StorageService } from "#/common/storage/storage.service";
 import { StoragePath } from "#/common/storage/storage-path.util";
 import { UserRole } from "#/common/entities/user-role.entity";
+import { Order } from "#/common/entities/order.entity";
 import { UpdateSavedLocationDto } from "./dto/update-saved-location.dto";
 import { CreateSavedLocationDto } from "./dto/create-saved-location.dto";
 import { ApiKey } from "#/common/entities/api-key.entity";
@@ -79,27 +83,33 @@ export class CompaniesService {
         ownerUserId: string,
         manager?: EntityManager
     ) {
+        let supabaseUser: User | undefined;
         try {
-            const supabaseUser =
+            // Resolve owner from Supabase
+            supabaseUser =
                 await this.usersService.getUserFromSupabase(ownerUserId);
 
-            if (!supabaseUser) {
-                throw new Error(
-                    `Supabase user ${ownerUserId} not found during company creation`
+            const ownerEmail = supabaseUser.email;
+
+            if (!ownerEmail) {
+                throw new ResourceNotFoundException(
+                    "Owner account is missing an email address."
                 );
             }
 
             const ownerName =
                 ((supabaseUser.user_metadata as Record<string, unknown> | null)
-                    ?.full_name as string | undefined) ??
-                supabaseUser.email ??
-                "Unknown";
+                    ?.full_name as string | undefined) ?? ownerEmail;
 
-            return this.withTransaction(manager, async trx => {
+            // Transaction
+            // NOTE: The manual email uniqueness check below is subject to a race
+            // condition. The QueryFailedError handler at the bottom catches the
+            // Postgres 23505 unique violation as a safety net.
+            return await this.withTransaction(manager, async trx => {
                 const companyRepo = trx.getRepository(Company);
 
                 const existing = await companyRepo.findOne({
-                    where: { email: dto.email }
+                    where: { email: dto.email.trim() }
                 });
 
                 if (existing) {
@@ -109,13 +119,14 @@ export class CompaniesService {
                 }
 
                 const company = companyRepo.create({
-                    name: dto.name,
-                    email: dto.email,
-                    timezone: dto.timezone
+                    name: dto.name.trim(),
+                    email: dto.email.trim().toLowerCase(),
+                    timezone: dto.timezone.trim()
                 });
 
                 const saved = await companyRepo.save(company);
 
+                // Bootstrap company resources
                 await this.subscriptionsService.createSubscription(
                     saved.id,
                     SubscriptionPlan.FREE,
@@ -129,7 +140,7 @@ export class CompaniesService {
                         userId: ownerUserId,
                         companyId: saved.id,
                         name: ownerName,
-                        email: supabaseUser.email as string,
+                        email: ownerEmail,
                         joinedAt: new Date(),
                         status: TeamMemberStatus.ACTIVE,
                         role: TeamRoleType.OWNER
@@ -147,10 +158,17 @@ export class CompaniesService {
                     .getRepository(CompanyNotificationSetting)
                     .save(companyNotificationSetting);
 
+                this.logger.log({
+                    msg: "Company created successfully",
+                    companyId: saved.id,
+                    ownerUserId,
+                    email: saved.email
+                });
+
                 return this.standardCompanyData(saved);
             });
-        } catch (error) {
-            this.errorHandler.handle(error, "CompaniesService.createCompany", [
+        } catch (err) {
+            this.errorHandler.handle(err, "CompaniesService.createCompany", [
                 rule(QueryFailedError, e => {
                     const pgError = (
                         e as unknown as {
@@ -280,6 +298,7 @@ export class CompaniesService {
      * @throws {ResourceConflictException}
      * If another company already uses the provided email address.
      */
+
     async updateCompany(
         companyId: string,
         dto: UpdateCompanyDto,
@@ -291,6 +310,7 @@ export class CompaniesService {
         manager?: EntityManager
     ) {
         let newUploadedLogoPath: string | undefined;
+        let oldLogoPath: string | undefined;
 
         try {
             return await this.withTransaction(manager, async trx => {
@@ -306,6 +326,7 @@ export class CompaniesService {
                     );
                 }
 
+                //  Email uniqueness check
                 if (dto.email && dto.email !== company.email) {
                     const emailTaken = await repo.findOne({
                         where: { email: dto.email }
@@ -318,8 +339,9 @@ export class CompaniesService {
                     }
                 }
 
+                // Upload new logo (outside DB transaction is fine; we clean up on rollback)
                 let logoUrl: string | undefined;
-                let oldLogoPath: string | undefined;
+                let logoFilename: string | undefined;
 
                 if (logoFile) {
                     if (company.logoFilename) {
@@ -329,12 +351,13 @@ export class CompaniesService {
                         );
                     }
 
-                    const extension = logoFile.extension.toLowerCase();
-                    const filename = `logo-${randomUUID()}.${extension}`;
-
+                    const ext = logoFile.extension
+                        .toLowerCase()
+                        .replace(/^\./, "");
+                    logoFilename = `logo-${randomUUID()}.${ext}`;
                     newUploadedLogoPath = StoragePath.companyLogo(
                         companyId,
-                        filename
+                        logoFilename
                     );
 
                     logoUrl = await this.storageService.uploadFile({
@@ -342,23 +365,31 @@ export class CompaniesService {
                         buffer: logoFile.buffer,
                         contentType: logoFile.contentType
                     });
-
-                    company.logoUrl = logoUrl;
-                    company.logoFilename = filename;
                 }
 
-                Object.assign(company, dto);
+                // Apply updates explicitly (never Object.assign)
+                if (dto.name !== undefined) company.name = dto.name.trim();
+                if (dto.email !== undefined) company.email = dto.email.trim();
+                if (logoUrl) {
+                    company.logoUrl = logoUrl;
+                    company.logoFilename = logoFilename || null;
+                }
 
                 const saved = await repo.save(company);
 
+                // Delete old logo only after DB commit succeeds
                 if (oldLogoPath) {
                     await this.storageService
                         .deleteFile(oldLogoPath)
                         .catch(err => {
                             this.logger.error({
-                                msg: `Failed to delete old company logo: ${oldLogoPath}`,
-                                err: (err as Error).message,
-                                stack: (err as Error).stack
+                                msg: "Failed to delete old company logo",
+                                path: oldLogoPath,
+                                companyId,
+                                err:
+                                    err instanceof Error
+                                        ? err.message
+                                        : String(err)
                             });
                         });
                 }
@@ -366,24 +397,23 @@ export class CompaniesService {
                 return this.standardCompanyData(saved);
             });
         } catch (err) {
-            // Cleanup first – never swallow the original error.
+            // Cleanup orphaned new logo on any failure
             if (newUploadedLogoPath) {
                 await this.storageService
                     .deleteFile(newUploadedLogoPath)
-                    .catch(cleanupErr =>
+                    .catch(cleanupErr => {
                         this.logger.error({
-                            msg: `Failed cleaning uploaded logo: ${newUploadedLogoPath}`,
-                            err: (cleanupErr as Error).message, stack:
-                            (cleanupErr as
-                            Error).stack
-                        })
-                    );
+                            msg: "Failed cleaning up uploaded company logo after error",
+                            path: newUploadedLogoPath,
+                            companyId,
+                            err:
+                                cleanupErr instanceof Error
+                                    ? cleanupErr.message
+                                    : String(cleanupErr)
+                        });
+                    });
             }
-
             this.errorHandler.handle(err, "CompaniesService.updateCompany", [
-                // Map known database constraint violations (beyond the manual
-                // email check) to a generic conflict message that doesn't
-                // reveal which column caused the problem.
                 rule(QueryFailedError, e => {
                     const pg = (e as any).driverError;
                     if (pg?.code === "23505") {
@@ -391,28 +421,6 @@ export class CompaniesService {
                             "This change conflicts with an existing company record."
                         );
                     }
-                    // Not a unique violation – let the generic handler deal with it.
-                    return new InternalErrorException(
-                        "An unexpected error occurred. Please try again later."
-                    );
-                }),
-
-                // Handle storage service errors gracefully. If your storage
-                // service throws a custom error class, use that here; otherwise
-                // catch a broad Error type but only if the message indicates a
-                // file operation failure. This keeps the response friendly while
-                // still logging the real error.
-                rule(Error, e => {
-                    if (
-                        e.message.includes("Storage") ||
-                        e.message.includes("upload") ||
-                        e.message.includes("file")
-                    ) {
-                        return new InternalErrorException(
-                            "Unable to process the uploaded file. Please try again."
-                        );
-                    }
-                    // Let other unknown errors fall through to the generic handler.
                     return new InternalErrorException(
                         "An unexpected error occurred. Please try again later."
                     );
@@ -421,109 +429,141 @@ export class CompaniesService {
         }
     }
 
-    /**
-     * Deletes a company and all associated resources.
-     *
-     * Removes the company record and relies on database cascade rules to clean up
-     * related records such as memberships, notification settings, locations,
-     * API keys, order, and trips. It also removes company storage files and
-     * deletes associated Supabase user accounts.
-     *
-     * @param companyId - The unique identifier of the company.
-     * @param manager - Optional transaction entity manager.
-     *
-     * @throws {ResourceNotFoundException}
-     * If the company could not be found.
-     */
     async deleteCompany(
         companyId: string,
         manager?: EntityManager
     ): Promise<void> {
+        let affectedUserIds: string[] = [];
+        let companyName: string | undefined;
+        const cleanupFailures: Array<{
+            type: string;
+            id?: string;
+            reason: string;
+        }> = [];
+
         try {
-            const affectedUserIds = await this.withTransaction(
-                manager,
-                async trx => {
-                    const repo = trx.getRepository(Company);
+            // Transaction: collect users, verify, delete
+            // We intentionally do NOT delete storage or auth inside the transaction.
+            // Those are external, unreliable systems. If they hang, they hold the DB
+            // connection open and can deadlock pool.
+            await this.withTransaction(manager, async trx => {
+                const repo = trx.getRepository(Company);
 
-                    const company = await repo.findOne({
-                        where: { id: companyId }
-                    });
-                    if (!company) {
-                        throw new ResourceNotFoundException(
-                            "The company you are trying to delete could not be found."
-                        );
-                    }
+                const company = await repo.findOne({
+                    where: { id: companyId }
+                });
 
-                    const memberships = await trx.getRepository(UserRole).find({
-                        where: { companyId },
-                        select: { userId: true }
-                    });
-
-                    const userIds = memberships
-                        .map(m => m.userId)
-                        .filter((id): id is string => !!id);
-
-                    // Cascade rules handle related records.
-                    await repo.remove(company);
-
-                    return userIds;
+                if (!company) {
+                    throw new ResourceNotFoundException(
+                        "The company you are trying to delete could not be found."
+                    );
                 }
-            );
 
-            // Storage cleanup – best effort is acceptable, but we want a safe
-            // message if it fails rather than a stack trace.
-            await this.storageService.deleteFolder(
-                StoragePath.companyRoot(companyId)
-            );
+                companyName = company.name;
 
-            // User cleanup – again, if one fails we want a descriptive but
-            // non‑revealing error, not a raw HTTP error from Supabase.
+                // Block deletion if active
+                // orders, drivers in transit, or unpaid invoices exist.
+                const activeOrders = await trx.getRepository(Order).count({
+                    where: {
+                        companyId,
+                        status: In(["in_transit", "picked_up", "assigned"])
+                    }
+                });
+                if (activeOrders > 0) {
+                    throw new ResourceConflictException(
+                        "Cannot delete company with active deliveries. Please complete or cancel them first."
+                    );
+                }
+
+                const memberships = await trx.getRepository(UserRole).find({
+                    where: { companyId },
+                    select: { userId: true }
+                });
+
+                affectedUserIds = memberships
+                    .map(m => m.userId)
+                    .filter((id): id is string => !!id);
+
+                await repo.remove(company);
+            });
+
+            // Post-transaction cleanup: best effort, never fails the request ──
+
+            //  Storage cleanup
+            try {
+                await this.storageService.deleteFolder(
+                    StoragePath.companyRoot(companyId)
+                );
+            } catch (storageErr) {
+                const reason =
+                    storageErr instanceof Error
+                        ? storageErr.message
+                        : String(storageErr);
+                cleanupFailures.push({ type: "storage", reason });
+                this.logger.error({
+                    msg: "CRITICAL: Company deleted from DB but storage cleanup failed",
+                    companyId,
+                    companyName,
+                    err: reason
+                });
+            }
+
+            // Auth cleanup — process each user independently.
+            // WARNING: If your users can belong to multiple companies, deleting their
+            // Supabase account here is a business-logic bug. In multi-tenant apps,
+            // you should only delete the auth user if this was their ONLY company.
             for (const userId of affectedUserIds) {
-                await this.usersService.deleteSupabaseUser(userId);
+                try {
+                    await this.usersService.deleteSupabaseUser(userId);
+                } catch (authErr) {
+                    const reason =
+                        authErr instanceof Error
+                            ? authErr.message
+                            : String(authErr);
+                    cleanupFailures.push({ type: "auth", id: userId, reason });
+                    this.logger.error({
+                        msg: "CRITICAL: Company deleted from DB but Supabase user cleanup failed",
+                        companyId,
+                        userId,
+                        err: reason
+                    });
+                }
+            }
+
+            //  Audit log if any cleanup failed
+            if (cleanupFailures.length > 0) {
+                this.logger.warn({
+                    msg: "Company deletion completed with orphaned resources",
+                    companyId,
+                    companyName,
+                    affectedUserCount: affectedUserIds.length,
+                    cleanupFailures
+                });
+            } else {
+                this.logger.log({
+                    msg: "Company deleted successfully",
+                    companyId,
+                    companyName,
+                    affectedUserCount: affectedUserIds.length
+                });
             }
         } catch (err) {
             this.errorHandler.handle(err, "CompaniesService.deleteCompany", [
-                // 1. Data‑related errors during the transaction
-                rule(
-                    QueryFailedError,
-                    () =>
-                        new InternalErrorException(
-                            "Could not complete the deletion due to a data conflict."
-                        )
-                ),
-
-                // 2. Storage cleanup failures – the company is already gone,
-                //    but files may be orphaned.
-                rule(Error, e => {
-                    if (
-                        e.message.includes("Storage") ||
-                        e.message.includes("folder") ||
-                        e.message.includes("file") ||
-                        e.message.includes("delete")
-                    ) {
-                        return new InternalErrorException(
-                            "Company removed, but some files could not be cleaned up immediately. Our team has been notified."
+                rule(QueryFailedError, e => {
+                    const pg = (e as any).driverError;
+                    if (pg?.code === "23503") {
+                        // Foreign key violation — active child records still exist
+                        return new ResourceConflictException(
+                            "Cannot delete this company because it still has active records (drivers, orders). Please remove or reassign them first."
+                        );
+                    }
+                    if (pg?.code === "23505") {
+                        return new ResourceConflictException(
+                            "A data conflict prevented deletion. Please try again."
                         );
                     }
                     return new InternalErrorException(
-                        "An unexpected error occurred. Please try again later."
-                    );
-                }),
-
-                // 3. Supabase user deletion errors – also a best‑effort step
-                rule(Error, e => {
-                    if (
-                        e.message.includes("Supabase") ||
-                        e.message.includes("user") ||
-                        e.message.includes("delete") ||
-                        e.message.includes("account")
-                    ) {
-                        return new InternalErrorException(
-                            "Company removed, but user accounts may not have been fully deactivated. Our team has been notified."
-                        );
-                    }
-                    return new InternalErrorException(
-                        "An unexpected error occurred. Please try again later."
+                        "Unable to delete company due to a database error. Please try again later."
                     );
                 })
             ]);

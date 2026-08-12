@@ -106,6 +106,9 @@ export class Subscription {
     nullable: true,
   })
   lastExpiryReminderSentAt: Date | null;
+  
+  @Column({ type: 'boolean', default: false })
+cancelAtPeriodEnd: boolean
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

@@ -1,14 +1,21 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import {
+    IsEmail,
+    IsNotEmpty,
+    IsString,
+    MinLength,
+    Validate
+} from "class-validator";
+import { IsStrongPassword } from "#/common/decorators/validate-password.decorator";
 
 export class ResetPasswordDto {
-  @IsEmail()
-  email: string;
+    @IsEmail()
+    email: string;
 
-  @IsString()
-  @IsNotEmpty()
-  token: string;
+    @IsString()
+    @IsNotEmpty()
+    token: string;
 
-  @IsString()
-  @MinLength(8)
-  newPassword: string;
+    @IsString()
+    @IsStrongPassword()
+    newPassword: string;
 }

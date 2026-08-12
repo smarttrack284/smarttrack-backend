@@ -4,6 +4,9 @@ import { DataSource, EntityManager, Repository } from "typeorm";
 import { UserRole } from "#/common/entities/user-role.entity";
 import { TeamRoleType } from "#/common/types/team-role.type";
 import {
+  BadRequestAppException,
+  UnauthorizedAppException,
+    RateLimitedException,
     ExternalServiceException,
     ForbiddenAppException,
     InternalErrorException,
@@ -11,15 +14,16 @@ import {
     ResourceNotFoundException
 } from "#/common/exceptions";
 import { SupabaseClient, User } from "@supabase/supabase-js";
-import { SUPABASE_CLIENT } from "#/common/constants/supabase.constant";
+import {
+    SUPABASE_CLIENT,
+    SUPABASE_PUBLIC
+} from "#/common/constants/supabase.constant";
 import { TeamMemberStatus } from "#/common/constants/team-member-status.constant";
 import { StorageService } from "#/common/storage/storage.service";
 import { UpdateUserProfileDto } from "./dto/update-user-profile.dto";
 import { StoragePath } from "#/common/storage/storage-path.util";
 import { UpdatePasswordDto } from "#/modules/users/dto/update-password.dto";
 import { ConfigService } from "@nestjs/config";
-// import { NotificationSetting } from "#/common/entities/notification-setting.entity";
- // import { UpdateNotificationSettingsDto } from "#/modules/users/dto/update-notification-settings.dto";
 import { ErrorHandlerService } from "#/common/errors/error-handler.service";
 import { randomUUID } from "crypto";
 
@@ -29,13 +33,13 @@ export class UsersService {
     constructor(
         @InjectRepository(UserRole)
         private readonly userRoleRepo: Repository<UserRole>,
-        //  @InjectRepository(NotificationSetting)
-        //         private readonly notificationSettingRepository: Repository<NotificationSetting>,
         @InjectDataSource() private readonly dataSource: DataSource,
-        @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+        @Inject(SUPABASE_CLIENT) private readonly supabaseAdmin: SupabaseClient,
         private readonly storageService: StorageService,
         private readonly config: ConfigService,
-        private readonly errorHandler: ErrorHandlerService
+        private readonly errorHandler: ErrorHandlerService,
+        @Inject(SUPABASE_PUBLIC)
+        private readonly supabasePublic: SupabaseClient
     ) {}
 
     /**
@@ -63,28 +67,26 @@ export class UsersService {
         },
         manager?: EntityManager
     ): Promise<UserRole> {
-        
-            return this.withTransaction(manager, async trx => {
-                const repo = trx.getRepository(UserRole);
+        return this.withTransaction(manager, async trx => {
+            const repo = trx.getRepository(UserRole);
 
-                const existing = await repo.findOne({
-                    where: {
-                        userId: input.userId,
-                        companyId: input.companyId
-                    }
-                });
-
-                if (existing) {
-                    throw new ResourceConflictException(
-                        "This user is already a member of this company."
-                    );
+            const existing = await repo.findOne({
+                where: {
+                    userId: input.userId,
+                    companyId: input.companyId
                 }
-
-                const userRole = repo.create(input);
-
-                return await repo.save(userRole);
             });
 
+            if (existing) {
+                throw new ResourceConflictException(
+                    "This user is already a member of this company."
+                );
+            }
+
+            const userRole = repo.create(input);
+
+            return await repo.save(userRole);
+        });
     }
 
     /**
@@ -136,14 +138,29 @@ export class UsersService {
     async getUserFromSupabase(userId: string): Promise<User> {
         try {
             const { data, error } =
-                await this.supabase.auth.admin.getUserById(userId);
+                await this.supabaseAdmin.auth.admin.getUserById(userId);
 
             if (error) {
-                // Log the technical error for developers
-                this.logger.error(
-                    "Failed to retrieve user from Supabase.",
-                    error
-                );
+                const msg = error.message?.toLowerCase() ?? "";
+                const code = (error as any).code ?? "";
+
+                // ── Rate limited by Supabase ──
+                if (
+                    code === "over_request_rate_limit" ||
+                    code === "over_email_send_rate_limit" ||
+                    msg.includes("rate limit") ||
+                    msg.includes("too many requests")
+                ) {
+                    throw new RateLimitedException(
+                        "Too many attempts. Please wait before trying again."
+                    );
+                }
+
+                this.logger.error({
+                    msg: "Failed to retrieve user from Supabase.",
+                    err: (error as Error).message,
+                    stack: (error as Error).stack
+                });
 
                 throw new InternalErrorException(
                     "We couldn’t retrieve your account at the moment. Please try again."
@@ -211,6 +228,7 @@ export class UsersService {
      *
      * @returns The updated profile information.
      */
+
     async updateUserProfile(
         userId: string,
         companyId: string,
@@ -227,23 +245,26 @@ export class UsersService {
         avatarUrl: string | null;
     }> {
         let newUploadedAvatarPath: string | undefined;
+        let oldAvatarPath: string | undefined;
+        let avatarFilename: string | undefined;
+        let avatarUrl: string | undefined;
+        let previousMetadata: Record<string, unknown> = {};
 
         try {
-            let avatarUrl: string | undefined;
-            let avatarFilename: string | undefined;
-            let oldAvatarPath: string | undefined;
-
+            //  Resolve user and snapshot current metadata
             const supabaseUser = await this.getUserFromSupabase(userId);
+            previousMetadata =
+                (supabaseUser.user_metadata as Record<string, unknown>) ?? {};
 
-            const metadata = supabaseUser.user_metadata as
-                | Record<string, unknown>
-                | undefined;
-
+            // Validate and upload avatar
             if (avatarFile) {
-                const existingFilename = metadata?.avatar_filename as
+                const ext = avatarFile.extension
+                    .toLowerCase()
+                    .replace(/^\./, "");
+
+                const existingFilename = previousMetadata.avatar_filename as
                     | string
                     | undefined;
-
                 if (existingFilename) {
                     oldAvatarPath = StoragePath.userAvatar(
                         companyId,
@@ -252,10 +273,7 @@ export class UsersService {
                     );
                 }
 
-                const extension = avatarFile.extension.toLowerCase();
-
-                avatarFilename = `avatar-${randomUUID()}.${extension}`;
-
+                avatarFilename = `avatar-${randomUUID()}.${ext}`;
                 newUploadedAvatarPath = StoragePath.userAvatar(
                     companyId,
                     userId,
@@ -269,50 +287,101 @@ export class UsersService {
                 });
             }
 
+            //  Build metadata update
             const metadataUpdate: Record<string, unknown> = {};
 
             if (dto.name !== undefined) {
-                metadataUpdate.full_name = dto.name;
+                metadataUpdate.full_name = dto.name.trim() || null;
             }
-
             if (dto.phone !== undefined) {
-                metadataUpdate.phone = dto.phone;
+                metadataUpdate.phone = dto.phone.trim() || null;
             }
-
             if (avatarUrl) {
                 metadataUpdate.avatar_url = avatarUrl;
                 metadataUpdate.avatar_filename = avatarFilename;
             }
 
             let updatedUser = supabaseUser;
+            let supabaseUpdated = false;
 
+            // Update Supabase auth (source of truth)
             if (Object.keys(metadataUpdate).length > 0) {
                 const { data, error } =
-                    await this.supabase.auth.admin.updateUserById(userId, {
+                    await this.supabaseAdmin.auth.admin.updateUserById(userId, {
                         user_metadata: metadataUpdate
                     });
 
                 if (error || !data?.user) {
+                    this.logger.error({
+                        msg: "Supabase admin.updateUserById failed",
+                        userId,
+                        status: (error as any)?.status,
+                        err: error?.message
+                    });
                     throw new ExternalServiceException(
                         "We couldn't update your profile at the moment. Please try again."
                     );
                 }
 
                 updatedUser = data.user;
+                supabaseUpdated = true;
             }
 
-            if (dto.name !== undefined) {
-                await this.userRoleRepo.update({ userId }, { name: dto.name });
+            // Sync local DB
+            // If this fails, we must rollback Supabase metadata to keep stores
+            // consistent. Auth metadata is the source of truth for reads.
+            try {
+                if (dto.name !== undefined) {
+                    await this.userRoleRepo.update(
+                        { userId },
+                        { name: dto.name.trim() || null }
+                    );
+                }
+                if (avatarUrl) {
+                    await this.userRoleRepo.update({ userId }, { avatarUrl });
+                }
+            } catch (dbErr) {
+                this.logger.error({
+                    msg: "Local DB sync failed after Supabase profile update",
+                    userId,
+                    err: dbErr instanceof Error ? dbErr.message : String(dbErr)
+                });
+
+                // Best-effort rollback of Supabase metadata to previous state
+                if (supabaseUpdated) {
+                    await this.supabaseAdmin.auth.admin
+                        .updateUserById(userId, {
+                            user_metadata: previousMetadata
+                        })
+                        .catch(rollbackErr => {
+                            this.logger.error({
+                                msg: "CRITICAL: Supabase metadata rollback failed after DB error",
+                                userId,
+                                err:
+                                    rollbackErr instanceof Error
+                                        ? rollbackErr.message
+                                        : String(rollbackErr)
+                            });
+                        });
+                }
+
+                throw new InternalErrorException(
+                    "Unable to sync profile changes. Please try again."
+                );
             }
 
+            // Delete old avatar only after full success
             if (oldAvatarPath) {
                 await this.storageService
                     .deleteFile(oldAvatarPath)
                     .catch(err => {
-                        this.logger.error(
-                            `Failed deleting old avatar: ${oldAvatarPath}`,
-                            err
-                        );
+                        this.logger.error({
+                            msg: "Failed deleting old avatar",
+                            path: oldAvatarPath,
+                            userId,
+                            err:
+                                err instanceof Error ? err.message : String(err)
+                        });
                     });
             }
 
@@ -328,21 +397,25 @@ export class UsersService {
                 avatarUrl: (updatedMetadata.avatar_url as string) ?? null
             };
         } catch (err) {
+            // Cleanup orphaned new avatar on any failure
             if (newUploadedAvatarPath) {
                 await this.storageService
                     .deleteFile(newUploadedAvatarPath)
-                    .catch(cleanupErr =>
-                        this.logger.error(
-                            `Failed cleaning uploaded avatar: ${newUploadedAvatarPath}`,
-                            cleanupErr
-                        )
-                    );
+                    .catch(cleanupErr => {
+                        this.logger.error({
+                            msg: "Failed cleaning up uploaded avatar after error",
+                            path: newUploadedAvatarPath,
+                            userId,
+                            err:
+                                cleanupErr instanceof Error
+                                    ? cleanupErr.message
+                                    : String(cleanupErr)
+                        });
+                    });
             }
-
             this.errorHandler.handle(err, "UsersService.updateUserProfile");
         }
     }
-
     /**
      * Updates a user's password.
      *
@@ -365,41 +438,66 @@ export class UsersService {
         dto: UpdatePasswordDto
     ): Promise<void> {
         try {
-            const { createClient } = await import("@supabase/supabase-js");
-
-            const verifyClient = createClient(
-                this.config.get<string>("SUPABASE_URL")!,
-                this.config.get<string>("SUPABASE_PUBLISHABLE_KEY")!
-            );
-
+            // Verify current password
+            // We MUST use the public/anon client here. The service-role client
+            // bypasses password checks entirely.
             const { error: signInError } =
-                await verifyClient.auth.signInWithPassword({
+                await this.supabasePublic.auth.signInWithPassword({
                     email,
                     password: dto.currentPassword
                 });
 
             if (signInError) {
-                throw new ForbiddenAppException(
-                    "Your current password is incorrect."
+                const msg = signInError.message?.toLowerCase() ?? "";
+
+                if (
+                    msg.includes("invalid login credentials") ||
+                    msg.includes("invalid credentials")
+                ) {
+                    throw new UnauthorizedAppException(
+                        "Your current password is incorrect."
+                    );
+                }
+
+                this.logger.error({
+                    msg: "Supabase public sign-in failed during password verification",
+                    userId,
+                    err: signInError.message
+                });
+
+                throw new ExternalServiceException(
+                    "Unable to verify credentials. Please try again."
                 );
             }
 
-            const { error } = await this.supabase.auth.admin.updateUserById(
-                userId,
-                {
+            //  Update password via admin
+            const { error: updateError } =
+                await this.supabaseAdmin.auth.admin.updateUserById(userId, {
                     password: dto.newPassword
-                }
-            );
+                });
 
-            if (error) {
-                this.logger.error(
-                    `Failed to update password for user ${userId}.`,
-                    error
-                );
+            if (updateError) {
+                const msg = updateError.message?.toLowerCase() ?? "";
+
+                this.logger.error({
+                    msg: "Supabase admin.updateUserById failed during password change",
+                    userId,
+                    err: updateError.message
+                });
+
+                if (
+                    msg.includes("password") ||
+                    msg.includes("weak") ||
+                    msg.includes("strength") ||
+                    msg.includes("breached")
+                ) {
+                    throw new BadRequestAppException(
+                        "New password does not meet security requirements. Please choose a stronger password."
+                    );
+                }
 
                 throw new ExternalServiceException(
-                    "Password",
-                    "We couldn't update your password at the moment. Please try again."
+                    "We couldn't update your password. Please try again later."
                 );
             }
         } catch (err) {
@@ -416,7 +514,8 @@ export class UsersService {
      * If the user account could not be deleted.
      */
     async deleteSupabaseUser(userId: string): Promise<void> {
-        const { error } = await this.supabase.auth.admin.deleteUser(userId);
+        const { error } =
+            await this.supabaseAdmin.auth.admin.deleteUser(userId);
 
         if (error) {
             this.logger.error(
@@ -443,7 +542,7 @@ export class UsersService {
         userId: string,
         duration: string = "876000h"
     ): Promise<void> {
-        const { error } = await this.supabase.auth.admin.updateUserById(
+        const { error } = await this.supabaseAdmin.auth.admin.updateUserById(
             userId,
             {
                 ban_duration: duration
@@ -472,7 +571,7 @@ export class UsersService {
      */
     async unbanSupabaseUser(userId: string): Promise<void> {
         // Setting ban_duration to "none" unbans the user in Supabase
-        const { error } = await this.supabase.auth.admin.updateUserById(
+        const { error } = await this.supabaseAdmin.auth.admin.updateUserById(
             userId,
             {
                 ban_duration: "none"
@@ -490,101 +589,6 @@ export class UsersService {
             );
         }
     }
-
-    /**
-     * Retrieves a user's notification settings.
-     *
-     * @param userId - The unique identifier of the user.
-     * @returns The user's notification settings.
-     *
-     * @throws {ResourceNotFoundException}
-     * If the user's notification settings could not be found.
-     */
-    // async getNotificationSettings(userId: string): Promise<{
-    //     emailOrderCreated: boolean;
-    //     emailOrderAssigned: boolean;
-    //     emailOrderPickedUp: boolean;
-    //     emailOrderDelivered: boolean;
-    //     emailOrderFailed: boolean;
-    //     emailOrderCancelled: boolean;
-    //   }> {
-    //     try {
-    //       const notificationSetting =
-    //         await this.notificationSettingRepository.findOne({
-    //           where: { userId },
-    //           select: {
-    //             emailOrderCreated: true,
-    //             emailOrderAssigned: true,
-    //             emailOrderPickedUp: true,
-    //             emailOrderDelivered: true,
-    //             emailOrderFailed: true,
-    //             emailOrderCancelled: true,
-    //           },
-    //         });
-    //
-    //       if (!notificationSetting) {
-    //         throw new ResourceNotFoundException(
-    //           'Notification settings could not be found.',
-    //         );
-    //       }
-    //
-    //       return notificationSetting;
-    //     } catch (err) {
-    //       this.errorHandler.handle(err, 'UsersService.getNotificationSettings');
-    //     }
-    //   }
-    //
-    /**
-     * Updates a user's notification settings.
-     *
-     * @param userId - The unique identifier of the user.
-     * @param dto - The notification settings to update.
-     * @returns The updated notification settings.
-     *
-     * @throws {ResourceNotFoundException}
-     * If the user's notification settings could not be found.
-     */
-    // async updateNotificationSettings(
-    //         userId: string,
-    //         dto: UpdateNotificationSettingsDto
-    //     ) {
-    //         try {
-    //             return this.withTransaction(undefined, async trx => {
-    //                 const repo = trx.getRepository(NotificationSetting);
-    //
-    //                 const notificationSetting = await repo.findOne({
-    //                     where: { userId }
-    //                 });
-    //
-    //                 if (!notificationSetting) {
-    //                     throw new ResourceNotFoundException(
-    //                         "Notification settings could not be found."
-    //                     );
-    //                 }
-    //
-    //                 // Update the notification settings.
-    //                 await repo.update({ userId }, dto);
-    //
-    //                 // Return the updated notification settings.
-    //                 return repo.findOne({
-    //                     where: { userId },
-    //                     select: {
-    //                         emailOrderCreated: true,
-    //                         emailOrderAssigned: true,
-    //                         emailOrderPickedUp: true,
-    //                         emailOrderDelivered: true,
-    //                         emailOrderCancelled: true,
-    //                         emailOrderFailed: true
-    //                     }
-    //                 });
-    //             });
-    //         } catch (err) {
-    //             this.errorHandler.handle(
-    //                 err,
-    //                 "UsersService.updateNotificationSettings"
-    //             );
-    //         }
-    //     }
 
     /**
      * Same pattern as CompaniesService.withTransaction — participates in an

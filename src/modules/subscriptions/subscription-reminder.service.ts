@@ -10,19 +10,26 @@ import {
     SUBSCRIPTION_REMINDER_QUEUE_NAME,
     SubscriptionReminderJobName
 } from "./constants/subscription-reminder-queue.constant";
-import { SubscriptionStatus } from "#/common/constants/subscription-plan.constant";
+import {
+    SubscriptionPlan,
+    SubscriptionStatus
+} from "#/common/constants/subscription-plan.constant";
 
 @Injectable()
 export class SubscriptionReminderService {
     private readonly logger = new Logger(SubscriptionReminderService.name);
-    private static readonly REMINDER_DAYS_AHEAD = 3;
+    private readonly reminderDaysAhead: number;
 
     constructor(
         @InjectRepository(Subscription)
         private readonly subscriptionRepo: Repository<Subscription>,
         @InjectQueue(SUBSCRIPTION_REMINDER_QUEUE_NAME)
-        private readonly reminderQueue: Queue
-    ) {}
+        private readonly reminderQueue: Queue,
+        private readonly config: ConfigService
+    ) {
+        this.reminderDaysAhead =
+            this.config.get<number>("SUBSCRIPTION_REMINDER_DAYS_AHEAD") ?? 3;
+    }
 
     @Cron("0 8 * * *")
     async sendExpirationReminders(): Promise<void> {
@@ -30,18 +37,22 @@ export class SubscriptionReminderService {
 
         try {
             const now = new Date();
-            const future = new Date();
-            future.setDate(
-                now.getDate() + SubscriptionReminderService.REMINDER_DAYS_AHEAD
-            );
+            now.setMilliseconds(0);
 
-            // Only fetch the columns we need for the job data
+            const future = new Date(now);
+            future.setDate(now.getDate() + this.reminderDaysAhead);
+
+            // Only paid plans that are active and have a known expiration date
             const subscriptions = await this.subscriptionRepo
                 .createQueryBuilder("sub")
-                .select(["sub.id", "sub.companyId"])
+                .select(["sub.id", "sub.companyId", "sub.currentPeriodEnd"])
                 .where("sub.status = :status", {
                     status: SubscriptionStatus.ACTIVE
                 })
+                .andWhere("sub.plan != :freePlan", {
+                    freePlan: SubscriptionPlan.FREE
+                })
+                .andWhere("sub.currentPeriodEnd IS NOT NULL")
                 .andWhere("sub.currentPeriodEnd BETWEEN :now AND :future", {
                     now,
                     future
@@ -49,39 +60,73 @@ export class SubscriptionReminderService {
                 .getMany();
 
             if (subscriptions.length === 0) {
-                this.logger.log({ msg: "No subscriptions expiring soon." });
+                this.logger.log({
+                    msg: "No paid subscriptions expiring soon."
+                });
                 return;
             }
 
+            let enqueued = 0;
+            let skipped = 0;
+
             for (const sub of subscriptions) {
-                // Use a unique jobId to prevent duplicate enqueuing if the cron runs multiple times
-                const jobId = `reminder:${sub.id}`;
-                await this.reminderQueue.add(
-                    SubscriptionReminderJobName.SEND_EXPIRY_REMINDER,
-                    {
+                // Guard: currentPeriodEnd should be populated (TypeORM partial entity safety)
+                if (!sub.currentPeriodEnd) {
+                    skipped++;
+                    continue;
+                }
+
+                // Unique jobId per billing period — prevents a stale failed job
+                // from blocking reminders after the subscription renews.
+                const periodDate = new Date(sub.currentPeriodEnd)
+                    .toISOString()
+                    .slice(0, 10);
+                const jobId = `reminder:${sub.id}:${periodDate}`;
+
+                try {
+                    await this.reminderQueue.add(
+                        SubscriptionReminderJobName.SEND_EXPIRY_REMINDER,
+                        {
+                            subscriptionId: sub.id,
+                            companyId: sub.companyId
+                        },
+                        {
+                            jobId,
+                            attempts: 3,
+                            backoff: { type: "exponential", delay: 10_000 },
+                            removeOnComplete: { count: 100 },
+                            removeOnFail: { count: 50 }
+                        }
+                    );
+                    enqueued++;
+                } catch (enqueueErr) {
+                    this.logger.error({
+                        msg: "Failed to enqueue reminder job",
                         subscriptionId: sub.id,
-                        companyId: sub.companyId
-                    },
-                    {
-                        jobId, // deduplication
-                        attempts: 2,
-                        backoff: { type: "exponential", delay: 5000 },
-                        removeOnComplete: true,
-                        removeOnFail: 500
-                    }
-                );
+                        companyId: sub.companyId,
+                        jobId,
+                        err:
+                            enqueueErr instanceof Error
+                                ? enqueueErr.message
+                                : String(enqueueErr)
+                    });
+                    skipped++;
+                }
             }
 
             this.logger.log({
-                msg: `Enqueued ${subscriptions.length} expiration reminders.`
+                msg: "Expiration reminder enqueue completed",
+                totalFound: subscriptions.length,
+                enqueued,
+                skipped,
+                windowStart: now.toISOString(),
+                windowEnd: future.toISOString()
             });
         } catch (err) {
-            this.logger.error(
-              {msg: 
-                "Subscription reminder cron job failed",
-              err:  (err as Error).message,
-              stack:  (err as Error).stack,
-           } );
+            this.logger.error({
+                msg: "Subscription reminder cron job failed",
+                err: err instanceof Error ? err.message : String(err)
+            });
         }
     }
 }

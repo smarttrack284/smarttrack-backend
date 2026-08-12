@@ -66,11 +66,11 @@ export class TripsGateway implements OnGatewayInit, OnGatewayDisconnect {
         }
 
         try {
-            // 1. Verify JWT (exactly what SupabaseAuthGuard does)
+            //  Verify JWT (exactly what SupabaseAuthGuard does)
             const payload = await this.verifier.verify(token);
             socket.data.user = payload;
 
-            // 2. Enrich socket with companyId & role (cached, same as guards)
+            //  Enrich socket with companyId & role (cached, same as guards)
             const userId: string = payload.id;
             const userRole = await this.cache.getOrSet<{
                 companyId: string;

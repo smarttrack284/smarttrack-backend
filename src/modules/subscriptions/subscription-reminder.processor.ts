@@ -13,13 +13,14 @@ import {
     SubscriptionPlan,
     SubscriptionStatus
 } from "#/common/constants/subscription-plan.constant";
-import { format } from "date-fns";
+import { format, isValid } from "date-fns";
 import {
-    sendExpirationRemindersJobData,
+    SendExpirationRemindersJobData,
     SUBSCRIPTION_REMINDER_QUEUE_NAME,
     SubscriptionReminderJobName
 } from "./constants/subscription-reminder-queue.constant";
 import { ConfigService } from "@nestjs/config";
+import { RedisCacheService } from "#/common/cache/redis-cache.service";
 
 @Processor(SUBSCRIPTION_REMINDER_QUEUE_NAME, { concurrency: 5 })
 export class SubscriptionReminderProcessor extends WorkerHost {
@@ -33,56 +34,131 @@ export class SubscriptionReminderProcessor extends WorkerHost {
         @InjectRepository(Company)
         private readonly companyRepo: Repository<Company>,
         private readonly mailService: MailService,
-        private readonly config: ConfigService
+        private readonly config: ConfigService,
+        private readonly cache: RedisCacheService
     ) {
         super();
     }
 
-    async process(job: Job<sendExpirationRemindersJobData>): Promise<void> {
-        if (job.name !== SubscriptionReminderJobName.SEND_EXPIRY_REMINDER)
+    async process(job: Job<SendExpirationRemindersJobData>): Promise<void> {
+        if (job.name !== SubscriptionReminderJobName.SEND_EXPIRY_REMINDER) {
+            this.logger.warn({
+                msg: "Unknown job name received",
+                jobName: job.name,
+                jobId: job.id
+            });
             return;
+        }
 
         const { subscriptionId, companyId } = job.data;
+
+        // Validate job payload
+        if (!subscriptionId?.trim() || !companyId?.trim()) {
+            this.logger.error({
+                msg: "Invalid job payload: missing subscriptionId or companyId",
+                jobId: job.id,
+                subscriptionId,
+                companyId
+            });
+            return; // Do not retry — payload is permanently bad
+        }
+
         try {
+            // Resolve subscription
             const subscription = await this.subscriptionRepo.findOne({
                 where: { id: subscriptionId }
             });
-            if (
-                !subscription ||
-                subscription.status !== SubscriptionStatus.ACTIVE
-            )
-                return;
 
-            // Idempotency guard – already sent in the last 24 hours?
-            if (subscription.wasReminderRecentlySent()) {
-                this.logger.log(
-                    `Skipping duplicate reminder for subscription ${subscriptionId}`
-                );
+            if (!subscription) {
+                this.logger.warn({
+                    msg: "Subscription not found for reminder",
+                    subscriptionId,
+                    companyId,
+                    jobId: job.id
+                });
                 return;
             }
 
+            // Only remind paid plans
+            if (subscription.plan === SubscriptionPlan.FREE) {
+                this.logger.log({
+                    msg: "Skipping reminder: subscription is on FREE plan",
+                    subscriptionId,
+                    companyId
+                });
+                return;
+            }
+
+            // Only remind active subscriptions
+            if (subscription.status !== SubscriptionStatus.ACTIVE) {
+                this.logger.log({
+                    msg: "Skipping reminder: subscription is not active",
+                    subscriptionId,
+                    companyId,
+                    status: subscription.status
+                });
+                return;
+            }
+
+            // Idempotency: already sent recently?
+            if (subscription.wasReminderRecentlySent?.()) {
+                this.logger.log({
+                    msg: "Skipping duplicate reminder: already sent recently",
+                    subscriptionId,
+                    companyId,
+                    jobId: job.id
+                });
+                return;
+            }
+
+            // Idempotency: email already sent for this period?
+            // Prevents duplicate emails if the job retries after save() fails
+            const emailSentKey = `reminder-email:${subscriptionId}:${
+                subscription.currentPeriodEnd?.toISOString().slice(0, 10) ??
+                "none"
+            }`;
+            // If you have Redis injected, check it here:
+            const alreadyEmailed = await this.cache.get(emailSentKey);
+            if (alreadyEmailed) return;
+
+            // Resolve owner
             const ownerRole = await this.userRoleRepo.findOne({
                 where: { companyId, role: TeamRoleType.OWNER }
             });
-            if (!ownerRole?.email) return;
 
+            if (!ownerRole?.email) {
+                this.logger.warn({
+                    msg: "No owner email found for reminder",
+                    subscriptionId,
+                    companyId
+                });
+                return;
+            }
+
+            // Resolve company & format data
             const company = await this.companyRepo.findOne({
                 where: { id: companyId }
             });
+
             const companyName = company?.name ?? "SmartTrack";
             const planName =
                 subscription.plan === SubscriptionPlan.PRO ? "Pro" : "Starter";
-            const expiryDate = subscription.currentPeriodEnd
-                ? format(
-                      new Date(subscription.currentPeriodEnd),
-                      "MMMM d, yyyy"
-                  )
-                : "soon";
-            const renewalUrl = `${process.env.CLIENT_URL}/dashboard/billing`;
+
+            const periodEnd = subscription.currentPeriodEnd
+                ? new Date(subscription.currentPeriodEnd)
+                : null;
+            const expiryDate =
+                periodEnd && isValid(periodEnd)
+                    ? format(periodEnd, "MMMM d, yyyy")
+                    : "soon";
+
+            const clientUrl = this.config.getOrThrow<string>("CLIENT_URL");
+            const renewalUrl = `${clientUrl}/dashboard/billing`;
             const supportEmail =
                 this.config.get<string>("SUPPORT_EMAIL") ??
                 "help@smarttrack.com";
 
+            // Send email
             await this.mailService.sendTemplateEmail({
                 to: ownerRole.email,
                 subject: `Your ${planName} plan expires on ${expiryDate}`,
@@ -98,18 +174,29 @@ export class SubscriptionReminderProcessor extends WorkerHost {
                 }
             });
 
-            // Mark the reminder as sent
-            subscription.markReminderSent();
+            //  Mark reminder sent
+            subscription.markReminderSent?.();
             await this.subscriptionRepo.save(subscription);
 
-            this.logger.log(`Sent expiry reminder`);
+            //  Redis for email idempotency:
+            await this.cache.set(emailSentKey, "1", 86400);
+
+            this.logger.log({
+                msg: "Expiry reminder sent successfully",
+                subscriptionId,
+                companyId,
+                to: ownerRole.email,
+                jobId: job.id
+            });
         } catch (err) {
             this.logger.error({
-                msg: `Failed to process reminder job ${job.id}`,
-                err: (err as Error).message,
-                stack: (err as Error).stack,
+                msg: "Failed to process expiry reminder job",
+                jobId: job.id,
+                subscriptionId,
+                companyId,
+                err: err instanceof Error ? err.message : String(err)
             });
-            throw err; // BullMQ will retry
+            throw err; // BullMQ will retry based on queue config
         }
     }
 }

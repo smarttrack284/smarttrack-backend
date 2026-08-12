@@ -1,10 +1,16 @@
-import { IsString, MinLength } from 'class-validator';
+import {
+    IsString,
+    MinLength,
+    IsNotEmpty,
+} from "class-validator";
+import { IsStrongPassword } from "#/common/decorators/validate-password.decorator";
 
 export class UpdatePasswordDto {
-  @IsString()
-  currentPassword: string;
+    @IsString()
+    @IsNotEmpty({ message: "Current password is required." })
+    currentPassword: string;
 
-  @IsString()
-  @MinLength(8)
-  newPassword: string;
+    @IsString()
+    @IsStrongPassword()
+    newPassword: string;
 }
