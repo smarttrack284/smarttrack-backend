@@ -1,5 +1,5 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
-import { NoSpecialChars } from '#/common/validators/no-special-chars.validator';
+import {IsEmail, IsNotEmpty, IsOptional, IsString, MinLength,} from 'class-validator';
+import {NoSpecialChars} from '#/common/validators/no-special-chars.validator';
 
 export class SignUpDto {
   @IsEmail()
@@ -19,4 +19,14 @@ export class SignUpDto {
     message: 'Full name contains invalid characters',
   })
   fullName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(2)
+  captchaToken: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  website?: string;
 }

@@ -1,29 +1,19 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Logger,
-  Post,
-  Query,
-  Req,
-  Res,
-  UseGuards,
-} from '@nestjs/common';
-import { FastifyReply, FastifyRequest } from 'fastify';
-import { AuthService } from './auth.service';
-import { SupabaseAuthGuard } from '#/common/guards/supabase-auth.guard';
-import { CurrentUser } from '#/common/decorators/current-user.decorator';
-import type { AuthenticatedUser } from '#/common/types/authenticated-user.type';
-import { LogInDto } from '#/modules/auth/dto/login.dto';
-import { SignUpDto } from '#/modules/auth/dto/sign-up.dto';
-import { ChangePasswordDto } from '#/modules/auth/dto/change-password.dto';
-import { ResendConfirmationDto } from '#/modules/auth/dto/resend-confirmation.dto';
-import { VerifyOtpDto } from '#/modules/auth/dto/verify-otp.dto';
-import { VerifyResetTokenDto } from '#/modules/auth/dto/verify-reset-token.dto';
-import { ResetPasswordDto } from '#/modules/auth/dto/reset-password.dto';
-import { ForgotPasswordDto } from '#/modules/auth/dto/forgot-password.dto';
-import { BadRequestAppException } from '#/common/exceptions';
-import { ConfigService } from '@nestjs/config';
+import {Body, Controller, Get, Logger, Post, Query, Req, Res, UseGuards,} from '@nestjs/common';
+import {FastifyReply, FastifyRequest} from 'fastify';
+import {AuthService} from './auth.service';
+import {SupabaseAuthGuard} from '#/common/guards/supabase-auth.guard';
+import {CurrentUser} from '#/common/decorators/current-user.decorator';
+import type {AuthenticatedUser} from '#/common/types/authenticated-user.type';
+import {LogInDto} from '#/modules/auth/dto/login.dto';
+import {SignUpDto} from '#/modules/auth/dto/sign-up.dto';
+import {ChangePasswordDto} from '#/modules/auth/dto/change-password.dto';
+import {ResendConfirmationDto} from '#/modules/auth/dto/resend-confirmation.dto';
+import {VerifyOtpDto} from '#/modules/auth/dto/verify-otp.dto';
+import {VerifyResetTokenDto} from '#/modules/auth/dto/verify-reset-token.dto';
+import {ResetPasswordDto} from '#/modules/auth/dto/reset-password.dto';
+import {ForgotPasswordDto} from '#/modules/auth/dto/forgot-password.dto';
+import {BadRequestAppException, ForbiddenAppException,} from '#/common/exceptions';
+import {ConfigService} from '@nestjs/config';
 
 @Controller('auth')
 export class AuthController {
@@ -35,7 +25,15 @@ export class AuthController {
 
   @Post('login')
   async login(@Body() dto: LogInDto, @Res() reply: FastifyReply) {
-    const { session } = await this.authService.login(dto.email, dto.password);
+    if (dto.website && dto.website.trim().length > 0) {
+      throw new ForbiddenAppException('Security verification failed.');
+    }
+
+    const { session } = await this.authService.login(
+      dto.email,
+      dto.password,
+      dto.captchaToken,
+    );
     this.setCookies(
       reply,
       session.access_token,
@@ -47,10 +45,15 @@ export class AuthController {
 
   @Post('signup')
   async signup(@Body() dto: SignUpDto, @Res() reply: FastifyReply) {
+    if (dto.website && dto.website.trim().length > 0) {
+      throw new ForbiddenAppException('Security verification failed.');
+    }
+
     const result = await this.authService.signup(
       dto.email,
       dto.password,
       dto.fullName,
+      dto.captchaToken,
     );
 
     // Only set cookies if a session was returned (email already confirmed)
@@ -74,7 +77,7 @@ export class AuthController {
     @Res() reply: FastifyReply,
   ) {
     // Revoke the session in Redis
-    await this.authService.revokeSession(user.sessionId);
+    await this.authService.revokeSession(user.sessionId, user.id);
     // Clear cookies
     this.clearCookies(request, reply);
     reply.send({ success: true });
@@ -141,8 +144,10 @@ export class AuthController {
 
   @Post('forgot-password')
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
-    await this.authService.forgotPassword(dto.email);
-    return { success: true };
+    if (dto.website && dto.website.trim().length > 0) {
+      throw new ForbiddenAppException('Security verification failed.');
+    }
+    return this.authService.forgotPassword(dto.email, dto.captchaToken);
   }
 
   @Get('me')

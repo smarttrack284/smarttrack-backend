@@ -3,25 +3,24 @@ import {
   ExecutionContext,
   Injectable,
   Logger,
-} from "@nestjs/common";
-import type { FastifyReply, FastifyRequest } from "fastify";
+} from '@nestjs/common';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   ForbiddenAppException,
   UnauthorizedAppException,
-} from "#/common/exceptions";
-import { SupabaseJwtVerifierService } from "#/common/auth/supabase-jwt-verifier.service";
-import { RedisCacheService } from "#/common/cache/redis-cache.service";
-import { ConfigService } from "@nestjs/config";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import { UserRole } from "#/common/entities/user-role.entity";
-import { TeamMemberStatus } from "#/common/constants/team-member-status.constant";
-import * as Sentry from "@sentry/node";
+} from '#/common/exceptions';
+import { SupabaseJwtVerifierService } from '#/common/auth/supabase-jwt-verifier.service';
+import { RedisCacheService } from '#/common/cache/redis-cache.service';
+import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { UserRole } from '#/common/entities/user-role.entity';
+import { TeamMemberStatus } from '#/common/constants/team-member-status.constant';
+import * as Sentry from '@sentry/node';
 
 @Injectable()
 export class SupabaseAuthGuard implements CanActivate {
   private static readonly USER_COMPANY_CACHE_TTL = 300; // seconds
-  private static readonly SESSION_BLACKLIST_TTL = 900; // 15 min (max token life)
   private readonly logger = new Logger(SupabaseAuthGuard.name);
   private readonly supabaseUrl: string;
   private readonly supabasePublishableKey: string;
@@ -31,11 +30,11 @@ export class SupabaseAuthGuard implements CanActivate {
     private readonly cache: RedisCacheService,
     private readonly config: ConfigService,
     @InjectRepository(UserRole)
-    private readonly userRoleRepo: Repository<UserRole>
+    private readonly userRoleRepo: Repository<UserRole>,
   ) {
-    this.supabaseUrl = this.config.get<string>("SUPABASE_URL")!;
+    this.supabaseUrl = this.config.get<string>('SUPABASE_URL')!;
     this.supabasePublishableKey = this.config.get<string>(
-      "SUPABASE_PUBLISHABLE_KEY"
+      'SUPABASE_PUBLISHABLE_KEY',
     )!;
   }
 
@@ -44,11 +43,11 @@ export class SupabaseAuthGuard implements CanActivate {
     const reply = context.switchToHttp().getResponse<FastifyReply>();
 
     // Get token ONLY from the httpOnly cookie
-    let token = request.cookies?.["sb-access-token"] ?? null;
+    let token = request.cookies?.['sb-access-token'] ?? null;
 
     // If no access token, try silent refresh using the refresh token cookie
     if (!token) {
-      const refreshToken = request.cookies?.["sb-refresh-token"];
+      const refreshToken = request.cookies?.['sb-refresh-token'];
       if (refreshToken) {
         try {
           const newTokens = await this.refreshTokens(refreshToken);
@@ -56,17 +55,17 @@ export class SupabaseAuthGuard implements CanActivate {
             reply,
             newTokens.accessToken,
             newTokens.refreshToken,
-            newTokens.expiresIn
+            newTokens.expiresIn,
           );
           token = newTokens.accessToken;
         } catch (refreshErr) {
           this.clearCookies(request, reply);
           throw new UnauthorizedAppException(
-            "Session expired. Please log in again."
+            'Session expired. Please log in again.',
           );
         }
       } else {
-        throw new UnauthorizedAppException("Missing session cookie");
+        throw new UnauthorizedAppException('Missing session cookie');
       }
     }
 
@@ -76,7 +75,7 @@ export class SupabaseAuthGuard implements CanActivate {
       payload = await this.verifier.verify(token);
     } catch (verifyErr) {
       // If verification fails (likely expired), attempt a refresh if we have a refresh token
-      const refreshToken = request.cookies?.["sb-refresh-token"];
+      const refreshToken = request.cookies?.['sb-refresh-token'];
       if (refreshToken) {
         try {
           const newTokens = await this.refreshTokens(refreshToken);
@@ -84,13 +83,13 @@ export class SupabaseAuthGuard implements CanActivate {
             reply,
             newTokens.accessToken,
             newTokens.refreshToken,
-            newTokens.expiresIn
+            newTokens.expiresIn,
           );
           payload = await this.verifier.verify(newTokens.accessToken);
         } catch (refreshErr) {
           this.clearCookies(request, reply);
           throw new UnauthorizedAppException(
-            "Session expired. Please log in again."
+            'Session expired. Please log in again.',
           );
         }
       } else {
@@ -101,22 +100,22 @@ export class SupabaseAuthGuard implements CanActivate {
     // ── Session blacklist check ──
     if (payload.sessionId) {
       const blacklisted = await this.cache.get(
-        `revoked-session:${payload.sessionId}`
+        `revoked-session:${payload.sessionId}`,
       );
       if (blacklisted) {
         this.logger.warn(
           `Auth failed: session ${
             payload.sessionId
-          } has been revoked [reqId: ${this.getRequestId(request)}]`
+          } has been revoked [reqId: ${this.getRequestId(request)}]`,
         );
-        throw new UnauthorizedAppException("Session has been revoked");
+        throw new UnauthorizedAppException('Session has been revoked');
       }
     }
 
     const userId = payload.id;
     const membership = await this.cache.getOrSet<Pick<
       UserRole,
-      "companyId" | "role" | "status" | "name"
+      'companyId' | 'role' | 'status' | 'name'
     > | null>(
       `user:company:${userId}`,
       SupabaseAuthGuard.USER_COMPANY_CACHE_TTL,
@@ -129,27 +128,27 @@ export class SupabaseAuthGuard implements CanActivate {
             status: true,
             name: true,
           },
-        })
+        }),
     );
 
     if (!membership) {
       this.logger.warn(
         `Auth failed: no UserRole for ${userId} [reqId: ${this.getRequestId(
-          request
-        )}]`
+          request,
+        )}]`,
       );
       throw new ForbiddenAppException(
-        "Your account is not associated with any company"
+        'Your account is not associated with any company',
       );
     }
     if (membership.status !== TeamMemberStatus.ACTIVE) {
       this.logger.warn(
         `Auth failed: inactive status ${
           membership.status
-        } for ${userId} [reqId: ${this.getRequestId(request)}]`
+        } for ${userId} [reqId: ${this.getRequestId(request)}]`,
       );
       throw new ForbiddenAppException(
-        "Your account is not active. Please contact your administrator."
+        'Your account is not active. Please contact your administrator.',
       );
     }
 
@@ -176,9 +175,7 @@ export class SupabaseAuthGuard implements CanActivate {
   /**
    * Calls Supabase's token refresh endpoint using the long‑lived refresh token.
    */
-  private async refreshTokens(
-    refreshToken: string
-  ): Promise<{
+  private async refreshTokens(refreshToken: string): Promise<{
     accessToken: string;
     refreshToken: string;
     expiresIn: number;
@@ -186,17 +183,17 @@ export class SupabaseAuthGuard implements CanActivate {
     const response = await fetch(
       `${this.supabaseUrl}/auth/v1/token?grant_type=refresh_token`,
       {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
           apikey: this.supabasePublishableKey,
         },
         body: JSON.stringify({ refresh_token: refreshToken }),
-      }
+      },
     );
 
     if (!response.ok) {
-      throw new Error("Refresh token exchange failed");
+      throw new Error('Refresh token exchange failed');
     }
 
     const data = await response.json();
@@ -214,21 +211,21 @@ export class SupabaseAuthGuard implements CanActivate {
     reply: FastifyReply,
     accessToken: string,
     refreshToken: string,
-    expiresIn: number
+    expiresIn: number,
   ) {
-    const isProd = process.env.NODE_ENV === "production";
-    reply.setCookie("sb-access-token", accessToken, {
+    const isProd = process.env.NODE_ENV === 'production';
+    reply.setCookie('sb-access-token', accessToken, {
       httpOnly: true,
       secure: isProd,
-      sameSite: "strict",
-      path: "/",
+      sameSite: 'strict',
+      path: '/',
       maxAge: expiresIn,
     });
-    reply.setCookie("sb-refresh-token", refreshToken, {
+    reply.setCookie('sb-refresh-token', refreshToken, {
       httpOnly: true,
       secure: isProd,
-      sameSite: "strict",
-      path: "/",
+      sameSite: 'strict',
+      path: '/',
       maxAge: 60 * 60 * 24 * 30,
     });
   }
@@ -241,8 +238,8 @@ export class SupabaseAuthGuard implements CanActivate {
   private clearCookies(request: FastifyRequest, reply: FastifyReply) {
     const cookieNames = Object.keys(request.cookies);
     for (const name of cookieNames) {
-      if (name.startsWith("sb-")) {
-        reply.clearCookie(name, { path: "/" });
+      if (name.startsWith('sb-')) {
+        reply.clearCookie(name, { path: '/' });
       }
     }
   }
@@ -253,10 +250,10 @@ export class SupabaseAuthGuard implements CanActivate {
    * never be accessible to JavaScript.
    */
   private extractToken(request: FastifyRequest): string | null {
-    return request.cookies?.["sb-access-token"] ?? null;
+    return request.cookies?.['sb-access-token'] ?? null;
   }
 
   private getRequestId(request: FastifyRequest): string {
-    return String(request.id ?? "unknown");
+    return String(request.id ?? 'unknown');
   }
 }
