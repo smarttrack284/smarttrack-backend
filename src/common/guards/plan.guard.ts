@@ -19,7 +19,7 @@ import { RedisCacheService } from "#/common/cache/redis-cache.service";
  * Lean subscription shape for caching — avoids TypeORM circular references
  * and keeps the Redis payload small.
  */
-interface CachedSubscription {
+export interface CachedSubscription {
     plan: string;
     status: string;
     currentPeriodEnd: Date | string | null;
@@ -31,11 +31,7 @@ const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active"]);
 @Injectable()
 export class PlanGuard implements CanActivate {
     private readonly logger = new Logger(PlanGuard.name);
-
-    // Short TTL – subscription data should be fairly fresh, but caching
-    // absorbs burst traffic on gated endpoints.
-    private static readonly SUBSCRIPTION_TTL = 60; // seconds
-
+    public static SUBSCRIPTION_TTL = 60;
     constructor(
         private readonly reflector: Reflector,
         private readonly subscriptionsService: SubscriptionsService,

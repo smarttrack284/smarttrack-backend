@@ -63,6 +63,7 @@ const ROLE_LABELS: Record<TeamRoleType, string> = {
   [TeamRoleType.ADMIN]: 'Admin',
   [TeamRoleType.DISPATCHER]: 'Dispatcher',
   [TeamRoleType.DRIVER]: 'Driver',
+  [TeamRoleType.SUPER_ADMIN]: 'Super Admin',
 };
 
 @Injectable()

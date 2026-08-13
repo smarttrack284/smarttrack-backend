@@ -12,14 +12,18 @@ import { UsersService } from "#/modules/users/users.service";
 import type { AuthenticatedSocket } from "#/common/types/authenticated-socket.type";
 import { OverviewEmitterService } from "./overview-emitter.service";
 import { OverviewService } from "./overview.service";
-
-const USER_ROLE_CACHE_TTL = 60;
+import { ConfigService } from "@nestjs/config";
+import { SubscriptionsService } from "#/modules/subscriptions/subscriptions.service";
+import { SubscriptionPlan } from "#/common/constants/subscription-plan.constant";
 
 @WebSocketGateway({
     namespace: "overview",
     cors: { origin: process.env.CLIENT_URL ?? true, credentials: true }
 })
 export class OverviewGateway implements OnGatewayInit {
+    private readonly USER_ROLE_CACHE_TTL: number;
+    private readonly PLAN_CACHE_TTL: number;
+
     @WebSocketServer()
     server: Server;
 
@@ -30,15 +34,22 @@ export class OverviewGateway implements OnGatewayInit {
         private readonly verifier: SupabaseJwtVerifierService,
         private readonly usersService: UsersService,
         private readonly overviewService: OverviewService,
-        private readonly cache: RedisCacheService // new dependency
-    ) {}
+        private readonly cache: RedisCacheService,
+        private readonly config: ConfigService,
+        private readonly subscriptionsService: SubscriptionsService
+    ) {
+        this.USER_ROLE_CACHE_TTL = this.config.get<number>(
+            "USER_ROLE_CACHE_TTL",
+            60
+        );
+        this.PLAN_CACHE_TTL = this.config.get<number>("PLAN_CACHE_TTL", 300);
+    }
 
     afterInit(server: Server): void {
         this.emitter.setServer(server);
     }
 
     async handleConnection(socket: AuthenticatedSocket): Promise<void> {
-        // Extract access token from the httpOnly cookie
         const rawCookie = socket.request.headers.cookie ?? "";
         const cookies = parse(rawCookie);
         const token = cookies["sb-access-token"];
@@ -52,11 +63,9 @@ export class OverviewGateway implements OnGatewayInit {
         }
 
         try {
-            // 1. Verify JWT (exactly what SupabaseAuthGuard does)
             const payload = await this.verifier.verify(token);
             socket.data.user = payload;
 
-            // 2. Enrich socket with companyId & role (cached, same as other gateways)
             const userId: string = payload.id;
             const userRole = await this.cache.getOrSet<{
                 companyId: string;
@@ -64,7 +73,7 @@ export class OverviewGateway implements OnGatewayInit {
                 status: string;
             } | null>(
                 `user:company:${userId}`,
-                USER_ROLE_CACHE_TTL,
+                this.USER_ROLE_CACHE_TTL,
                 async () => {
                     const role =
                         await this.usersService.getUserRoleByUserId(userId);
@@ -86,24 +95,73 @@ export class OverviewGateway implements OnGatewayInit {
                 return;
             }
 
-            // Store companyId on the socket for later use
             socket.data.user.companyId = userRole.companyId;
             socket.data.user.role = userRole.role;
 
-            // Join the overview room and send an immediate snapshot
+            // Determine subscription plan (cached)
+            const plan = await this.cache.getOrSet<SubscriptionPlan>(
+                `overview:plan:${userRole.companyId}`,
+                this.PLAN_CACHE_TTL,
+                async () => {
+                    const sub =
+                        await this.subscriptionsService.getSubscriptionByCompanyId(
+                            userRole.companyId
+                        );
+                    return sub?.plan ?? SubscriptionPlan.FREE;
+                }
+            );
+
             await socket.join(`overview:${userRole.companyId}`);
+
+            // Basic data always
             const [kpis, activity, recentOrders] = await Promise.all([
                 this.overviewService.getKpis(userRole.companyId),
                 this.overviewService.getRecentActivity(userRole.companyId),
                 this.overviewService.getRecentOrders(userRole.companyId)
             ]);
-            socket.emit("overview:update", { kpis, activity, recentOrders });
+
+            let payloadToSend: any = { kpis, activity, recentOrders };
+
+            // Advanced data for Pro plan only
+            if (plan === SubscriptionPlan.PRO) {
+                const [advancedKpis, advancedRecentOrders, advancedActivity] =
+                    await Promise.all([
+                        this.overviewService.getAdvancedKpis(
+                            userRole.companyId
+                        ),
+                        this.overviewService.getAdvancedRecentOrders(
+                            userRole.companyId,
+                            {
+                                page: 1,
+                                pageSize: 5
+                            }
+                        ),
+                        this.overviewService.getAdvancedActivity(
+                            userRole.companyId,
+                            {
+                                page: 1,
+                                pageSize: 5
+                            }
+                        )
+                    ]);
+
+                payloadToSend = {
+                    ...payloadToSend,
+                    advanced: {
+                        kpis: advancedKpis,
+                        recentOrders: advancedRecentOrders,
+                        activity: advancedActivity
+                    }
+                };
+            }
+
+            socket.emit("overview:update", payloadToSend);
         } catch (err) {
-            this.logger.error({ msg: 
-                `Connection auth error for socket ${socket.id}`,
+            this.logger.error({
+                msg: `Connection auth error for socket ${socket.id}`,
                 err: (err as Error).message,
-                stack: (err as Error).stack,
-           } );
+                stack: (err as Error).stack
+            });
             socket.disconnect(true);
         }
     }

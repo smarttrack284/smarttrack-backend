@@ -4,6 +4,7 @@ export enum ActivityCategory {
   TEAM = 'team',
   API_KEY = 'api_key',
   SYSTEM = 'system',
+  ADMIN_ACTION = 'admin_action',
 }
 
 export enum ActivitySeverity {

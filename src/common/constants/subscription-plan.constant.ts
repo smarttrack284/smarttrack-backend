@@ -103,3 +103,11 @@ export function hasPlanFeature<K extends keyof PlanFeatures>(
 ): PlanFeatures[K] {
     return SUBSCRIPTION_PLAN_FEATURES[plan][feature];
 }
+
+export function getPlanUsageLimits(plan: SubscriptionPlan) {
+  const features = SUBSCRIPTION_PLAN_FEATURES[plan];
+  return {
+    orderLimit: features.orderLimit,
+    teamMemberLimit: features.teamMemberLimit
+  }
+}

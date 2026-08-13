@@ -5,25 +5,26 @@ import {
     WebSocketGateway,
     WebSocketServer
 } from "@nestjs/websockets";
+import { Logger } from "@nestjs/common";
 import type { Server } from "socket.io";
+import { parse } from "cookie";
 import { SupabaseJwtVerifierService } from "#/common/auth/supabase-jwt-verifier.service";
 import { UsersService } from "#/modules/users/users.service";
+import { RedisCacheService } from "#/common/cache/redis-cache.service";
 import { TeamRoleType } from "#/common/types/team-role.type";
 import type { AuthenticatedSocket } from "#/common/types/authenticated-socket.type";
 import { DriverPresenceService } from "./driver-presence.service";
 import { HasActiveStopsService } from "./has-active-stops.service";
+import { ConfigService } from "@nestjs/config";
 
 type DriverSocket = AuthenticatedSocket & {
-    data: { user?: any; companyId?: string; driverName?: string };
+    data: {
+        user?: any;
+        companyId?: string;
+        driverName?: string;
+    };
 };
 
-/**
- * A driver's mobile app connects here for the lifetime of their shift —
- * connection = online, disconnect (past the grace period) = offline.
- * Distinct namespace from `tracking`, since presence is a different
- * concern from live location broadcasting, even though both are
- * driver-app-facing.
- */
 @WebSocketGateway({
     namespace: "driver-presence",
     cors: { origin: process.env.CLIENT_URL ?? true, credentials: true }
@@ -32,31 +33,69 @@ export class DriverPresenceGateway implements OnGatewayInit {
     @WebSocketServer()
     server: Server;
 
+    private readonly USER_ROLE_CACHE_TTL: number;
+    private readonly logger = new Logger(DriverPresenceGateway.name);
+
     constructor(
         private readonly presenceService: DriverPresenceService,
         private readonly verifier: SupabaseJwtVerifierService,
         private readonly usersService: UsersService,
-        private readonly hasActiveStopsService: HasActiveStopsService
-    ) {}
+        private readonly hasActiveStopsService: HasActiveStopsService,
+        private readonly cache: RedisCacheService,
+        private readonly config: ConfigService
+    ) {
+        this.USER_ROLE_CACHE_TTL = this.config.get<number>(
+            "USER_ROLE_CACHE_TTL",
+            60
+        );
+    }
 
     afterInit(): void {}
 
-    /** Unlike TrackingGateway, a missing/invalid token here always disconnects — this namespace has no legitimate anonymous/public use case the way tracking-by-number does. */
     async handleConnection(socket: DriverSocket): Promise<void> {
-        const token = socket.handshake.auth?.token as string | undefined;
+        // Extract token from httpOnly cookie
+        const rawCookie = socket.request.headers.cookie ?? "";
+        const cookies = parse(rawCookie);
+        const token = cookies["sb-access-token"];
+
         if (!token) {
+            this.logger.warn({
+                msg: `Socket ${socket.id} missing access token – disconnecting`
+            });
             socket.disconnect(true);
             return;
         }
 
         try {
             const user = await this.verifier.verify(token);
-            const userRole = await this.usersService.getUserRoleByUserId(
-                user.id
+
+            // Enrich with cached user role
+            const userId = user.id;
+            const userRole = await this.cache.getOrSet<{
+                companyId: string;
+                role: string;
+                name: string | null;
+            } | null>(
+                `user:company:${userId}`,
+                this.USER_ROLE_CACHE_TTL,
+                async () => {
+                    const role =
+                        await this.usersService.getUserRoleByUserId(userId);
+                    return role
+                        ? {
+                              companyId: role.companyId,
+                              role: role.role,
+                              name: role.name
+                          }
+                        : null;
+                }
             );
 
-            if (userRole.role !== TeamRoleType.DRIVER) {
-                socket.disconnect(true); // presence is a driver-only concept — a dispatcher's own connection shouldn't register as "a driver went online"
+            if (!userRole || userRole.role !== TeamRoleType.DRIVER) {
+                this.logger.warn(
+                    `Socket ${socket.id} user ${userId} is not a driver – disconnecting`
+                );
+                socket.disconnect(true);
                 return;
             }
 
@@ -69,7 +108,11 @@ export class DriverPresenceGateway implements OnGatewayInit {
                 user.id,
                 socket.data.driverName
             );
-        } catch {
+        } catch (err) {
+            this.logger.error({
+                msg: `Connection auth error for socket ${socket.id}`,
+                stack: (err as Error).stack
+            });
             socket.disconnect(true);
         }
     }
@@ -85,7 +128,6 @@ export class DriverPresenceGateway implements OnGatewayInit {
         );
     }
 
-    /** Driver app calls this periodically (e.g. every 30s) to keep the TTL fresh — a distinct signal from connect/disconnect, since a long-lived socket connection alone shouldn't be assumed healthy without confirmation. */
     @SubscribeMessage("heartbeat")
     async handleHeartbeat(@ConnectedSocket() socket: DriverSocket) {
         if (!socket.data.user || !socket.data.companyId) return;
