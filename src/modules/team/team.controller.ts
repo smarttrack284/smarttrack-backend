@@ -22,8 +22,10 @@ import { AcceptInviteDto } from '#/modules/team/dto/accept-invite.dto';
 import { Roles } from '#/common/decorators/roles.decorator';
 import { TeamRoleType } from '#/common/types/team-role.type';
 import { RolesGuard } from '#/common/guards/roles.guard';
+import { PublicThrottle } from '#/common/decorators/throttle.decorator';
 
 @Controller('team')
+@PublicThrottle()
 export class TeamController {
   constructor(
     private readonly teamService: TeamService,

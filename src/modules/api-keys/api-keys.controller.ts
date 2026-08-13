@@ -18,11 +18,13 @@ import { CurrentUser } from '#/common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '#/common/types/authenticated-user.type';
 import { ApiKeysService } from './api-keys.service';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
+import { PublicThrottle } from '#/common/decorators/throttle.decorator';
 
+@Controller('companies/api-keys')
 @UseGuards(SupabaseAuthGuard, PlanGuard, RolesGuard)
+@PublicThrottle()
 @RequirePlan(SubscriptionPlan.PRO)
 @Roles(TeamRoleType.OWNER)
-@Controller('companies/api-keys')
 export class ApiKeysController {
   constructor(private readonly apiKeysService: ApiKeysService) {}
 

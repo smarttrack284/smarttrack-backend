@@ -14,7 +14,9 @@ import {ResetPasswordDto} from '#/modules/auth/dto/reset-password.dto';
 import {ForgotPasswordDto} from '#/modules/auth/dto/forgot-password.dto';
 import {BadRequestAppException, ForbiddenAppException,} from '#/common/exceptions';
 import {ConfigService} from '@nestjs/config';
+import {AuthThrottle} from "#/common/decorators/throttle.decorator";
 
+@AuthThrottle()
 @Controller('auth')
 export class AuthController {
   private logger: Logger = new Logger(AuthController.name);

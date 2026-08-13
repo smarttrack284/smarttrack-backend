@@ -12,8 +12,10 @@ import { RequirePlan } from '#/common/decorators/require-plan.decorator';
 import { SubscriptionPlan } from '#/common/constants/subscription-plan.constant';
 import { ListActivityLogQueryDto } from '#/modules/activity-log/dto/list-activity-log.query.dto';
 import { ListOrdersQueryDto } from '#/modules/orders/dto/list-orders.query.dto';
+import { PublicThrottle } from '#/common/decorators/throttle.decorator';
 
 @Controller('overview')
+@PublicThrottle()
 export class OverviewController {
   constructor(
     private readonly overviewService: OverviewService,

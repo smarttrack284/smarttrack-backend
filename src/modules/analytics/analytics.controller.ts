@@ -11,11 +11,13 @@ import { TeamRoleType } from '#/common/types/team-role.type';
 import { PlanGuard } from '#/common/guards/plan.guard';
 import { RequirePlan } from '#/common/decorators/require-plan.decorator';
 import { SubscriptionPlan } from '#/common/constants/subscription-plan.constant';
+import { PublicThrottle } from '#/common/decorators/throttle.decorator';
 
+@Controller('analytics')
 @UseGuards(SupabaseAuthGuard, PlanGuard, RolesGuard)
+@PublicThrottle()
 @RequirePlan(SubscriptionPlan.STARTER, SubscriptionPlan.PRO)
 @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN)
-@Controller('analytics')
 export class AnalyticsController {
   constructor(
     private readonly analyticsService: AnalyticsService,

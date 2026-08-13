@@ -23,9 +23,14 @@ import type { FastifyRequest } from 'fastify';
 import { Roles } from '#/common/decorators/roles.decorator';
 import { RolesGuard } from '#/common/guards/roles.guard';
 import { TeamRoleType } from '#/common/types/team-role.type';
+import {
+  PublicThrottle,
+  UploadThrottle,
+} from '#/common/decorators/throttle.decorator';
 
-@UseGuards(SupabaseAuthGuard, RolesGuard)
 @Controller('dispatch/trips')
+@UseGuards(SupabaseAuthGuard, RolesGuard)
+@PublicThrottle()
 export class DispatchController {
   constructor(private readonly dispatchService: DispatchService) {}
 
@@ -101,6 +106,7 @@ export class DispatchController {
   }
 
   @Post(':tripId/stops/:stopId/complete')
+  @UploadThrottle()
   @Roles(
     TeamRoleType.OWNER,
     TeamRoleType.ADMIN,

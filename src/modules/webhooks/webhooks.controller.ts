@@ -1,15 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Param,
-  ParseUUIDPipe,
-  Patch,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards, } from '@nestjs/common';
 import { SupabaseAuthGuard } from '#/common/guards/supabase-auth.guard';
 import { PlanGuard } from '#/common/guards/plan.guard';
 import { RequirePlan } from '#/common/decorators/require-plan.decorator';
@@ -24,11 +13,13 @@ import { ListWebhookDeliveriesQueryDto } from './dto/list-webhook-deliveries.que
 import { RolesGuard } from '#/common/guards/roles.guard';
 import { Roles } from '#/common/decorators/roles.decorator';
 import { TeamRoleType } from '#/common/types/team-role.type';
+import { PublicThrottle } from '#/common/decorators/throttle.decorator';
 
+@Controller('webhooks')
 @UseGuards(SupabaseAuthGuard, PlanGuard, RolesGuard)
+@PublicThrottle()
 @RequirePlan(SubscriptionPlan.PRO)
 @Roles(TeamRoleType.OWNER)
-@Controller('webhooks')
 export class WebhooksController {
   constructor(
     private readonly webhooksService: WebhooksService,

@@ -27,8 +27,10 @@ import { PlanGuard } from '#/common/guards/plan.guard';
 import { SubscriptionPlan } from '#/common/constants/subscription-plan.constant';
 import { FastifyRequest } from 'fastify';
 import { BadRequestAppException } from '#/common/exceptions';
+import { PublicThrottle } from '#/common/decorators/throttle.decorator';
 
 @Controller('orders')
+@PublicThrottle()
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 

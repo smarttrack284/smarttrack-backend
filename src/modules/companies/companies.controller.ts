@@ -19,8 +19,10 @@ import { CreateSavedLocationDto } from './dto/create-saved-location.dto';
 import { UpdateSavedLocationDto } from './dto/update-saved-location.dto';
 import { UpdateCompanyNotificationDto } from './dto/update-company-notification.dto';
 import { OptionalAuthGuard } from '#/common/guards/optional-auth.guard';
+import { PublicThrottle, UploadThrottle, } from '#/common/decorators/throttle.decorator';
 
 @Controller('companies')
+@PublicThrottle()
 export class CompaniesController {
   constructor(private readonly companiesService: CompaniesService) {}
 
@@ -73,7 +75,6 @@ export class CompaniesController {
     return this.companiesService.getCompanyNotification(user.companyId!);
   }
 
-  // Public endpoint – no guard required.
   @Get(':companyId')
   async findCompany(@Param('companyId', ParseUUIDPipe) companyId: string) {
     return this.companiesService.getCompanyById(companyId);
@@ -109,6 +110,7 @@ export class CompaniesController {
   }
 
   @UseGuards(SupabaseAuthGuard, RolesGuard)
+  @UploadThrottle()
   @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN)
   @Patch(':companyId')
   async updateCompany(

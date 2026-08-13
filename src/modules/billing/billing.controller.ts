@@ -13,7 +13,9 @@ import { SubscriptionPlan } from '#/common/constants/subscription-plan.constant'
 import { RolesGuard } from '#/common/guards/roles.guard';
 import { Roles } from '#/common/decorators/roles.decorator';
 import { TeamRoleType } from '#/common/types/team-role.type';
+import { PublicThrottle } from '#/common/decorators/throttle.decorator';
 
+@PublicThrottle()
 @Controller('billing')
 export class BillingController {
   constructor(

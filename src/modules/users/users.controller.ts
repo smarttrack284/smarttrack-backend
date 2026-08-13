@@ -8,13 +8,19 @@ import { UsersService } from './users.service';
 import { UpdateUserProfileDto } from './dto/update-user-profile.dto';
 import { UpdatePasswordDto } from './dto/update-password.dto';
 import { OptionalAuthGuard } from '#/common/guards/optional-auth.guard';
+import {
+  PublicThrottle,
+  UploadThrottle,
+} from '#/common/decorators/throttle.decorator';
 
 @Controller('users/me')
+@PublicThrottle()
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @UseGuards(SupabaseAuthGuard)
   @Patch('profile')
+  @UseGuards(SupabaseAuthGuard)
+  @UploadThrottle()
   async updateProfile(
     @CurrentUser() user: AuthenticatedUser,
     @Req() request: FastifyRequest,

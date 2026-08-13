@@ -13,6 +13,7 @@ import { WebhookDeliveryProcessor } from './webhook-delivery.processor';
 import { WebhooksController } from './webhooks.controller';
 import { WebhookDeliveryCleanupService } from '#/modules/webhooks/webhook-delivery-cleanup.service';
 import { UserRole } from '#/common/entities/user-role.entity';
+import { PaystackWebhookController } from '#/modules/webhooks/paystack-webhook.controller';
 
 @Module({
   imports: [
@@ -21,7 +22,7 @@ import { UserRole } from '#/common/entities/user-role.entity';
     UsersModule,
     SubscriptionsModule,
   ],
-  controllers: [WebhooksController],
+  controllers: [WebhooksController, PaystackWebhookController],
   providers: [
     WebhooksService,
     WebhooksDispatcherService,
