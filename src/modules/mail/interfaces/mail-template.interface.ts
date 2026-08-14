@@ -32,7 +32,10 @@ export enum MailTemplate {
 
     /* Subscriptions */
     SUBSCRIPTION_EXPIRING = "subscription-expiring",
-    SUBSCRIPTION_PAYMENT_FAILED = "subscription-payment-failed"
+    SUBSCRIPTION_PAYMENT_FAILED = "subscription-payment-failed",
+
+    /* Admins */
+    ADMIN_INVITE = "admin-invite"
 }
 
 /**
@@ -128,6 +131,14 @@ export type SubscriptionPaymentFailedContext = {
     year: number;
 };
 
+/* Admins  */
+export type AdminInviteContext = {
+    inviteUrl: string;
+    roleLabel: string;
+    supportEmail: string;
+    year: number;
+};
+
 /**
  * Maps every email template to its strongly typed context.
  *
@@ -174,8 +185,9 @@ export type MailTemplateContextMap = {
 
     /* Subscriptions */
     [MailTemplate.SUBSCRIPTION_EXPIRING]: SubscriptionExpiringContext;
-    
-      [MailTemplate.SUBSCRIPTION_PAYMENT_FAILED]: SubscriptionPaymentFailedContext;
 
+    [MailTemplate.SUBSCRIPTION_PAYMENT_FAILED]: SubscriptionPaymentFailedContext;
+
+    /* Admins  */
+    [MailTemplate.ADMIN_INVITE]: AdminInviteContext;
 };
-

@@ -1,5 +1,5 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
-import { SupabaseAuthGuard } from "#/common/guards/supabase-auth.guard";
+import { AdminAuthGuard } from "#/common/guards/admin-auth.guard";
 import { SuperAdminGuard } from "#/common/guards/super-admin.guard";
 import { AdminActivityLogService } from "./activity-log.service";
 import { ListActivityLogAdminDto } from "./dto/list-activity-log-admin.dto";

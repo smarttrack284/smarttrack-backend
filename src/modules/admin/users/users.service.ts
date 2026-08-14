@@ -114,7 +114,7 @@ export class AdminUsersService {
       await this.cache.del(`user:company:${userId}`);
 
       const adminUser =
-        await this.usersService.getUserRoleByUserId(adminUserId);
+        await this.usersService.getUserFromSupabase(adminUserId);
 
       // Audit log with correct companyId
       await this.activityLogService.record({
@@ -124,7 +124,7 @@ export class AdminUsersService {
         severity: ActivitySeverity.WARNING,
         message: `Admin suspended user ${userId}`,
         actorUserId: adminUserId,
-        actorName: adminUser.name,
+        actorName: adminUser.user_metadata?.full_name,
       });
 
       // Admin Audit log
@@ -187,7 +187,7 @@ export class AdminUsersService {
       await this.cache.del(`user:company:${userId}`);
 
       const adminUser =
-        await this.usersService.getUserRoleByUserId(adminUserId);
+        await this.usersService.getUserFromSupabase(adminUserId);
 
       await this.activityLogService.record({
         companyId: result.companyId,
@@ -196,7 +196,7 @@ export class AdminUsersService {
         severity: ActivitySeverity.WARNING,
         message: `Admin reactivated user ${userId}`,
         actorUserId: adminUserId,
-        actorName: adminUser.name,
+        actorName: adminUser.user_metadata?.full_name,
       });
 
       // Admin Audit log

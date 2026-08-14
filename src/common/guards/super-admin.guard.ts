@@ -1,20 +1,16 @@
-import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
-import type { FastifyRequest } from "fastify";
-import { ForbiddenAppException } from "#/common/exceptions";
-import { TeamRoleType } from "#/common/types/team-role.type";
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { ForbiddenAppException } from '#/common/exceptions';
+import { AdminRole } from '#/common/constants/admin-role.constant';
 
 @Injectable()
 export class SuperAdminGuard implements CanActivate {
-    canActivate(context: ExecutionContext): boolean {
-        const request = context.switchToHttp().getRequest<FastifyRequest>();
-        const user = (request as any).user;
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest();
+    const adminUser = (request as any).adminUser;
 
-        if (!user || user.role !== TeamRoleType.SUPER_ADMIN) {
-            throw new ForbiddenAppException(
-                "You do not have permission to access this resource."
-            );
-        }
-
-        return true;
+    if (!adminUser || adminUser.role !== AdminRole.SUPER_ADMIN) {
+      throw new ForbiddenAppException('Super admin access required');
     }
+    return true;
+  }
 }

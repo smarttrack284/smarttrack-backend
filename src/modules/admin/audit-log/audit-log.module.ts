@@ -9,5 +9,6 @@ import { UsersModule } from '#/modules/users/users.module';
   imports: [TypeOrmModule.forFeature([AdminAuditLog]), UsersModule],
   controllers: [AdminAuditLogController],
   providers: [AdminAuditLogService,],
+  exports: [AdminAuditLogService,],
 })
 export class AdminAuditLogModule {}

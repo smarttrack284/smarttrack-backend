@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminCompaniesController } from './companies.controller';
 import { AdminCompaniesService } from './companies.service';
-import { SuperAdminGuard } from '#/common/guards/super-admin.guard';
+import { AdminAuthGuard } from "#/common/guards/admin-auth.guard";
 import { Company } from '#/common/entities/company.entity';
 import { Subscription } from '#/common/entities/subscription.entity';
 import { Usage } from '#/common/entities/usage.entity';
@@ -34,6 +34,6 @@ import { AdminUsersModule } from '#/modules/admin/users/users.module';
     AdminUsersModule,
   ],
   controllers: [AdminCompaniesController],
-  providers: [AdminCompaniesService, SuperAdminGuard],
+  providers: [AdminCompaniesService, AdminAuthGuard],
 })
 export class AdminCompaniesModule {}

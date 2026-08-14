@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SmartTrack Admin Invitation</title>
+    <!-- Import DM Sans for email clients that support web fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+</head>
+<body style="margin:0;padding:0;background:#fdfcfb;font-family:'DM Sans', ui-sans-serif, system-ui, Arial, sans-serif;color:#2b2a29;">
+
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fdfcfb;padding:40px 20px;">
+    <tr>
+        <td align="center">
+
+            <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background:#ffffff;border-radius:10px;overflow:hidden;">
+
+                <!-- Header / Primary Brand Color -->
+                <tr>
+                    <td style="background:#16a34a;padding:24px;text-align:center;">
+                        <h1 style="margin:0;color:#ffffff;font-size:24px;">
+                            SmartTrack
+                        </h1>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td style="padding:40px;">
+
+                        <p style="margin-top:0;font-size:16px;">
+                            Hello,
+                        </p>
+
+                        <p style="font-size:15px;line-height:1.7;">
+                            You have been invited to join the SmartTrack admin platform as a
+                            <strong>{{roleLabel}}</strong>.
+                        </p>
+
+                        <p style="font-size:15px;line-height:1.7;">
+                            Click the button below to create your account and access the admin dashboard.
+                        </p>
+
+                        <!-- Role Box / Muted Background & Border -->
+                        <table width="100%" cellspacing="0" cellpadding="0" style="margin:30px 0;background:#f6f5f3;border:1px solid #e6e4df;border-radius:8px;">
+                            <tr>
+                                <td style="padding:20px;text-align:center;">
+                                    <p style="margin:0 0 8px;font-size:14px;color:#716f6b;">
+                                        <strong>Your Role</strong>
+                                    </p>
+                                    <p style="margin:0;font-size:18px;font-weight:bold;color:#16a34a;">
+                                        {{roleLabel}}
+                                    </p>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <!-- Call to Action / Primary Brand Color -->
+                        <div style="text-align:center;margin:35px 0;">
+
+                            <a
+                                href="{{inviteUrl}}"
+                                style="background:#16a34a;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:8px;font-weight:bold;display:inline-block;">
+                                Accept Invitation
+                            </a>
+
+                        </div>
+
+                        <p style="font-size:15px;line-height:1.7;">
+                            If you were not expecting this invitation, you can safely ignore this email.
+                            No changes will be made to your account.
+                        </p>
+
+                        <p style="margin-top:40px;">
+                            Kind regards,<br>
+                            <strong>SmartTrack Team</strong>
+                        </p>
+
+                    </td>
+                </tr>
+
+                <!-- Footer – clarifies sender identity -->
+                <tr>
+                    <td style="background:#f6f5f3;padding:20px;text-align:center;font-size:12px;color:#716f6b;line-height:1.6;">
+                        This automated message was sent by <strong>SmartTrack</strong>.<br>
+                        Need help? Contact us at <a href="mailto:{{supportEmail}}" style="color:#16a34a;text-decoration:none;">{{supportEmail}}</a>.
+                    </td>
+                </tr>
+
+            </table>
+
+        </td>
+    </tr>
+</table>
+
+</body>
+</html>

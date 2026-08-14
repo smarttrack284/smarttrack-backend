@@ -86,7 +86,7 @@ export class AdminImpersonationService {
         .sign(new TextEncoder().encode(this.impersonationSecret));
 
       const adminUser =
-        await this.usersService.getUserRoleByUserId(adminUserId);
+        await this.usersService.getUserFromSupabase(adminUserId);
 
       // Audit log
       await this.activityLogService.record({
@@ -96,7 +96,7 @@ export class AdminImpersonationService {
         severity: ActivitySeverity.WARNING,
         message: `Admin ${adminUserId} impersonated user ${targetUserRole.userId} in company ${companyId}`,
         actorUserId: adminUserId,
-        actorName: adminUser.name,
+        actorName: adminUser.user_metadata?.full_name,
         metadata: { impersonatedUserId: targetUserRole.userId, companyId },
       });
 
