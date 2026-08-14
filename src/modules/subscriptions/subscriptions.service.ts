@@ -459,9 +459,9 @@ export class SubscriptionsService {
             await this.cache.set(key, "1", this.PROCESSED_TXN_TTL);
         } catch (err) {
             this.logger.error({
-                msg: "Failed to mark transaction as processed",
-                reference,
-                err: err instanceof Error ? err.message : String(err)
+              msg: 'Failed to mark transaction as processed',
+              reference,
+              err: err instanceof Error ? err.message : String(err),
             });
         }
     }
@@ -472,7 +472,7 @@ export class SubscriptionsService {
 
     private async invalidatePlanGuardCache(companyId: string): Promise<void> {
         try {
-            await this.cache.del(PlanGuard.subscriptionKey(companyId));
+            await this.cache.del(`plan-guard:subscription:${companyId}`);
         } catch (err) {
             this.logger.error({
                 msg: "Failed to invalidate PlanGuard cache",

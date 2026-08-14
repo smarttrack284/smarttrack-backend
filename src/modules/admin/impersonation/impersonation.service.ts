@@ -1,21 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { SignJWT } from 'jose';
 import { ConfigService } from '@nestjs/config';
 import { UserRole } from '#/common/entities/user-role.entity';
 import { Company } from '#/common/entities/company.entity';
-import { TeamRoleType } from '#/common/types/team-role.type';
 import { TeamMemberStatus } from '#/common/constants/team-member-status.constant';
-import {
-  BadRequestAppException,
-  InternalErrorException,
-  ResourceNotFoundException,
-} from '#/common/exceptions';
-import { ErrorHandlerService, rule } from '#/common/errors/error-handler.service';
-import { QueryFailedError } from 'typeorm';
+import { BadRequestAppException, InternalErrorException, ResourceNotFoundException, } from '#/common/exceptions';
+import { ErrorHandlerService, rule, } from '#/common/errors/error-handler.service';
 import { ActivityLogService } from '#/modules/activity-log/activity-log.service';
-import { ActivityCategory, ActivitySeverity } from '#/common/constants/activity-log.constant';
+import { ActivityCategory, ActivitySeverity, } from '#/common/constants/activity-log.constant';
+import { AdminAuditLog } from '#/common/entities/admin-audit-log.entity';
+import { UsersService } from '#/modules/users/users.service';
 
 @Injectable()
 export class AdminImpersonationService {
@@ -28,9 +24,12 @@ export class AdminImpersonationService {
     private readonly userRoleRepo: Repository<UserRole>,
     @InjectRepository(Company)
     private readonly companyRepo: Repository<Company>,
+    @InjectRepository(AdminAuditLog)
+    private readonly adminAuditLogRepo: Repository<AdminAuditLog>,
     private readonly config: ConfigService,
     private readonly errorHandler: ErrorHandlerService,
     private readonly activityLogService: ActivityLogService,
+    private readonly usersService: UsersService,
   ) {
     this.impersonationSecret = this.config.get<string>('IMPERSONATION_SECRET')!;
     if (!this.impersonationSecret) {
@@ -41,36 +40,29 @@ export class AdminImpersonationService {
   async impersonateCompany(
     companyId: string,
     adminUserId: string,
-    dto?: { userId?: string },
+    dto: { userId: string },
   ): Promise<{ accessToken: string; expiresIn: number; tokenType: string }> {
     try {
-      const company = await this.companyRepo.findOne({ where: { id: companyId } });
+      const company = await this.companyRepo.findOne({
+        where: { id: companyId },
+      });
       if (!company) {
         throw new ResourceNotFoundException('Company not found');
       }
 
-      let targetUserRole: UserRole | null;
+      if (!dto.userId) {
+        throw new BadRequestAppException('No target user was provided');
+      }
 
-      if (dto?.userId) {
-        // Impersonate a specific user
-        targetUserRole = await this.userRoleRepo.findOne({
-          where: { companyId, userId: dto.userId },
-        });
-        if (!targetUserRole) {
-          throw new BadRequestAppException(
-            'The specified user is not a member of this company',
-          );
-        }
-      } else {
-        // Impersonate the company owner
-        targetUserRole = await this.userRoleRepo.findOne({
-          where: { companyId, role: TeamRoleType.OWNER },
-        });
-        if (!targetUserRole) {
-          throw new BadRequestAppException(
-            'This company does not have an owner to impersonate',
-          );
-        }
+      // Impersonate a specific user
+      const targetUserRole = await this.userRoleRepo.findOne({
+        where: { companyId, userId: dto.userId },
+      });
+
+      if (!targetUserRole) {
+        throw new BadRequestAppException(
+          'The specified user is not a member of this company',
+        );
       }
 
       if (targetUserRole.status !== TeamMemberStatus.ACTIVE) {
@@ -93,15 +85,28 @@ export class AdminImpersonationService {
         .setExpirationTime(`${this.TOKEN_TTL_SECONDS}s`)
         .sign(new TextEncoder().encode(this.impersonationSecret));
 
+      const adminUser =
+        await this.usersService.getUserRoleByUserId(adminUserId);
+
       // Audit log
       await this.activityLogService.record({
         companyId,
-        category: ActivityCategory.ADMIN_ACTION, // adjust if needed
+        category: ActivityCategory.ADMIN_ACTION,
         eventType: 'admin.impersonation_started',
         severity: ActivitySeverity.WARNING,
         message: `Admin ${adminUserId} impersonated user ${targetUserRole.userId} in company ${companyId}`,
         actorUserId: adminUserId,
-        actorName: null, // can be enriched
+        actorName: adminUser.name,
+        metadata: { impersonatedUserId: targetUserRole.userId, companyId },
+      });
+
+      // Admin Audit log
+      await this.adminAuditLogRepo.save({
+        adminUserId,
+        companyId,
+        action: 'admin.impersonation_started',
+        severity: ActivitySeverity.WARNING,
+        message: `Admin ${adminUserId} impersonated user ${targetUserRole.userId} in company ${companyId}`,
         metadata: { impersonatedUserId: targetUserRole.userId, companyId },
       });
 
@@ -111,18 +116,26 @@ export class AdminImpersonationService {
         tokenType: 'Bearer',
       };
     } catch (err) {
-      this.errorHandler.handle(err, 'AdminImpersonationService.impersonateCompany', [
-        rule(QueryFailedError, () =>
-          new InternalErrorException(
-            'Unable to initiate impersonation. Please try again.',
+      this.errorHandler.handle(
+        err,
+        'AdminImpersonationService.impersonateCompany',
+        [
+          rule(
+            QueryFailedError,
+            () =>
+              new InternalErrorException(
+                'Unable to initiate impersonation. Please try again.',
+              ),
           ),
-        ),
-        rule(Error, () =>
-          new InternalErrorException(
-            'An unexpected error occurred. Please try again later.',
+          rule(
+            Error,
+            () =>
+              new InternalErrorException(
+                'An unexpected error occurred. Please try again later.',
+              ),
           ),
-        ),
-      ]);
+        ],
+      );
     }
   }
 }

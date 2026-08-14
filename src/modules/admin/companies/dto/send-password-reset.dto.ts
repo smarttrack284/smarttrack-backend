@@ -1,6 +1,6 @@
 import { IsUUID } from 'class-validator';
 
-export class ImpersonateCompanyDto {
+export class SendPasswordResetDto {
   @IsUUID()
   userId: string;
 }
