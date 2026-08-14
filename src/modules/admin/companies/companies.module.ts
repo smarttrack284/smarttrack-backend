@@ -14,6 +14,7 @@ import { ActivityLogModule } from '#/modules/activity-log/activity-log.module';
 import { WebhookDelivery } from '#/common/entities/webhook-delivery.entity';
 import { AdminAuditLog } from '#/common/entities/admin-audit-log.entity';
 import { UsersModule } from '#/modules/users/users.module';
+import { AdminUsersModule } from '#/modules/admin/users/users.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { UsersModule } from '#/modules/users/users.module';
     ]),
     ActivityLogModule,
     UsersModule,
+    AdminUsersModule,
   ],
   controllers: [AdminCompaniesController],
   providers: [AdminCompaniesService, SuperAdminGuard],

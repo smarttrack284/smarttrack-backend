@@ -18,5 +18,6 @@ import { AdminAuditLog } from '#/common/entities/admin-audit-log.entity';
   ],
   controllers: [AdminUsersController],
   providers: [AdminUsersService, SuperAdminGuard],
+  exports: [AdminUsersService],
 })
 export class AdminUsersModule {}
