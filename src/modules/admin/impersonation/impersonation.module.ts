@@ -6,13 +6,13 @@ import { UserRole } from '#/common/entities/user-role.entity';
 import { Company } from '#/common/entities/company.entity';
 import { ActivityLogModule } from '#/modules/activity-log/activity-log.module';
 import { AdminAuditLog } from '#/common/entities/admin-audit-log.entity';
-import { UsersService } from '#/modules/users/users.service';
+import { UsersModule } from '#/modules/users/users.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([UserRole, Company, AdminAuditLog]),
     ActivityLogModule,
-    UsersService,
+    UsersModule,
   ],
   controllers: [AdminImpersonationController],
   providers: [AdminImpersonationService],
