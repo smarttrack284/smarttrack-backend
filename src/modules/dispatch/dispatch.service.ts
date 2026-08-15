@@ -53,6 +53,7 @@ import {
     StopSkippedEvent
 } from "#/common/events/stop.events";
 import { generateTripReference } from "#/common/utils/trip-reference.util";
+import { StorageCleanupService } from "#/modules/storage-cleanup/storage-cleanup.service";
 
 export type TripDriver = {
     id: string;
@@ -84,7 +85,8 @@ export class DispatchService {
         private readonly cache: RedisCacheService,
         private readonly storageService: StorageService,
         private readonly errorHandler: ErrorHandlerService,
-        private readonly events: EventEmitter2
+        private readonly events: EventEmitter2,
+        private readonly storageCleanupService: StorageCleanupService,
     ) {}
 
     /**
@@ -585,28 +587,18 @@ export class DispatchService {
 
             return savedStop;
         } catch (err) {
-            // Best‑effort cleanup of any uploaded files if something went wrong
+            // Enqueue cleanup of newly uploaded files on failure
             if (uploadedPhotoPath) {
-                await this.storageService
-                    .deleteFile(uploadedPhotoPath)
-                    .catch(cleanupErr =>
-                        this.logger.error({
-                            msg: `Failed cleaning PoD photo: ${uploadedPhotoPath}`,
-                            err: (cleanupErr as Error).message,
-                            stack: (cleanupErr as Error).stack
-                        })
-                    );
+                await this.storageCleanupService.enqueueDelete(
+                    uploadedPhotoPath,
+                    "pod_photo_upload_failed"
+                );
             }
             if (uploadedSignaturePath) {
-                await this.storageService
-                    .deleteFile(uploadedSignaturePath)
-                    .catch(cleanupErr =>
-                        this.logger.error({
-                            msg: `Failed cleaning PoD signature: ${uploadedSignaturePath}`,
-                            err: (cleanupErr as Error).message,
-                            stack: (cleanupErr as Error).stack
-                        })
-                    );
+                await this.storageCleanupService.enqueueDelete(
+                    uploadedSignaturePath,
+                    "pod_signature_upload_failed"
+                );
             }
 
             this.errorHandler.handle(err, "DispatchService.completeStop", [
@@ -621,7 +613,6 @@ export class DispatchService {
                             "Unable to process delivery proof files. Please try again."
                         );
                     }
-                    // Let other unknown errors fall through to the generic handler
                     return new InternalErrorException(
                         "An unexpected error occurred. Please try again later."
                     );
@@ -645,7 +636,6 @@ export class DispatchService {
             ]);
         }
     }
-
 
     /**
      * Skips a trip stop and marks the related order as failed.

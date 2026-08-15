@@ -27,7 +27,6 @@ import { FastifyRequest } from "fastify";
 import { ListApiKeysDto } from "./dto/list-api-keys.dto";
 import { ListWebhookEndpointsDto } from "./dto/list-webhook-endpoints.dto";
 
-@UseGuards(AdminAuthGuard, SuperAdminGuard)
 @PublicThrottle()
 @Controller("admin")
 export class AdminCompaniesController {
@@ -35,11 +34,13 @@ export class AdminCompaniesController {
         private readonly adminCompaniesService: AdminCompaniesService
     ) {}
 
+    @UseGuards(AdminAuthGuard)
     @Get("companies")
     async listCompanies(@Query() dto: ListCompaniesDto) {
         return this.adminCompaniesService.listCompanies(dto);
     }
 
+    @UseGuards(AdminAuthGuard)
     @Get(":id")
     async getCompanyDetail(
         @Param("id", ParseUUIDPipe) id: string,
@@ -48,6 +49,7 @@ export class AdminCompaniesController {
         return this.adminCompaniesService.getCompanyDetail(id, dto);
     }
 
+    @UseGuards(AdminAuthGuard)
     @Get(":id/orders")
     async listCompanyOrders(
         @Param("id", ParseUUIDPipe) companyId: string,
@@ -56,6 +58,7 @@ export class AdminCompaniesController {
         return this.adminCompaniesService.listCompanyOrders(companyId, dto);
     }
 
+    @UseGuards(AdminAuthGuard)
     @Get(":id/webhook-deliveries")
     async listWebhookDeliveries(
         @Param("id", ParseUUIDPipe) companyId: string,
@@ -64,6 +67,7 @@ export class AdminCompaniesController {
         return this.adminCompaniesService.listWebhookDeliveries(companyId, dto);
     }
 
+    @UseGuards(AdminAuthGuard)
     @Get(":id/api-keys")
     async listApiKeys(
         @Param("id", ParseUUIDPipe) companyId: string,
@@ -72,6 +76,7 @@ export class AdminCompaniesController {
         return this.adminCompaniesService.listApiKeys(companyId, dto);
     }
 
+    @UseGuards(AdminAuthGuard)
     @Get(":id/webhook-endpoints")
     async listWebhookEndpoints(
         @Param("id", ParseUUIDPipe) companyId: string,
@@ -80,6 +85,7 @@ export class AdminCompaniesController {
         return this.adminCompaniesService.listWebhookEndpoints(companyId, dto);
     }
 
+    @UseGuards(AdminAuthGuard, SuperAdminGuard)
     @Post(":id/plan")
     async changeCompanyPlan(
         @Param("id", ParseUUIDPipe) id: string,
@@ -94,6 +100,7 @@ export class AdminCompaniesController {
         );
     }
 
+    @UseGuards(AdminAuthGuard, SuperAdminGuard)
     @Post(":id/send-password-reset")
     async sendPasswordReset(
         @Param("id", ParseUUIDPipe) companyId: string,
@@ -108,6 +115,7 @@ export class AdminCompaniesController {
         );
     }
 
+    @UseGuards(AdminAuthGuard, SuperAdminGuard)
     @Post(":id/revoke-api-key")
     async revokeApiKey(
         @Param("id", ParseUUIDPipe) companyId: string,
@@ -122,6 +130,7 @@ export class AdminCompaniesController {
         );
     }
 
+    @UseGuards(AdminAuthGuard, SuperAdminGuard)
     @Post(":id/suspend")
     async suspendCompany(
         @Param("id", ParseUUIDPipe) companyId: string,
@@ -134,6 +143,7 @@ export class AdminCompaniesController {
         );
     }
 
+    @UseGuards(AdminAuthGuard, SuperAdminGuard)
     @Post(":id/reactivate")
     async reactivateCompany(
         @Param("id", ParseUUIDPipe) companyId: string,
@@ -146,6 +156,7 @@ export class AdminCompaniesController {
         );
     }
 
+    @UseGuards(AdminAuthGuard, SuperAdminGuard)
     @Post(":id/webhook-endpoints/:endpointId/toggle")
     async toggleWebhookEndpoint(
         @Param("id", ParseUUIDPipe) companyId: string,
@@ -162,6 +173,7 @@ export class AdminCompaniesController {
         );
     }
 
+    @UseGuards(AdminAuthGuard, SuperAdminGuard)
     @Post(":id/change-owner")
     async changeOwner(
         @Param("id", ParseUUIDPipe) companyId: string,
@@ -175,6 +187,8 @@ export class AdminCompaniesController {
             dto
         );
     }
+
+@UseGuards(AdminAuthGuard, SuperAdminGuard)
 
     @Delete(":id")
     async deleteCompany(

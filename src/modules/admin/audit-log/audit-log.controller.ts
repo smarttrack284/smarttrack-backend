@@ -4,7 +4,7 @@ import { SuperAdminGuard } from "#/common/guards/super-admin.guard";
 import { AdminAuditLogService } from "./audit-log.service";
 import { ListAdminAuditLogsDto } from "./dto/list-admin-audit-logs.dto";
 
-@UseGuards(AdminAuthGuard, SuperAdminGuard)
+@UseGuards(AdminAuthGuard)
 @Controller("admin/audit-logs")
 export class AdminAuditLogController {
     constructor(private readonly adminAuditLogService: AdminAuditLogService) {}

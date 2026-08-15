@@ -25,7 +25,6 @@ import { FileValidationPipe } from "#/common/pipes/file-validation.pipe";
 import { ListAdminInvitesDto } from "./dto/list-admin-invites.dto";
 import { PublicThrottle } from "#/common/decorators/throttle.decorator";
 
-@UseGuards(AdminAuthGuard)
 @PublicThrottle()
 @Controller("admin/admins")
 export class AdminAdminsController {
@@ -37,14 +36,14 @@ export class AdminAdminsController {
         return this.adminAdminsService.acceptAdminInvite(dto);
     }
 
-    @UseGuards(SuperAdminGuard)
+    @UseGuards(AdminAuthGuard, SuperAdminGuard)
     @Post("invite")
     async inviteAdmin(@Body() dto: InviteAdminDto, @Req() req: FastifyRequest) {
         const inviterUserId = (req as any).adminUser.userId;
         return this.adminAdminsService.inviteAdmin(dto, inviterUserId);
     }
 
-    @UseGuards(SuperAdminGuard)
+    @UseGuards(AdminAuthGuard, SuperAdminGuard)
     @Post("resend-invite")
     async resendAdminInvite(
         @Body() dto: ResendAdminInviteDto,
@@ -54,6 +53,7 @@ export class AdminAdminsController {
         return this.adminAdminsService.resendAdminInvite(dto, inviterUserId);
     }
 
+    @UseGuards(AdminAuthGuard, SuperAdminGuard)
     @Get()
     async listAdmins(@Query() dto: ListAdminsDto) {
         return this.adminAdminsService.listAdmins(dto);
@@ -72,7 +72,7 @@ export class AdminAdminsController {
         return this.adminAdminsService.getMe(adminUser.userId);
     }
 
-    @UseGuards(SuperAdminGuard)
+    @UseGuards(AdminAuthGuard, SuperAdminGuard)
     @Patch(":id")
     async updateAdmin(
         @Param("id", ParseUUIDPipe) adminId: string,
@@ -81,6 +81,7 @@ export class AdminAdminsController {
         return this.adminAdminsService.updateAdmin(adminId, dto);
     }
 
+    @UseGuards(AdminAuthGuard)
     @Patch("me")
     async updateOwnProfile(@Req() request: FastifyRequest) {
         const adminUser = (request as any).adminUser;
@@ -130,25 +131,25 @@ export class AdminAdminsController {
         );
     }
 
-    @UseGuards(SuperAdminGuard)
+    @UseGuards(AdminAuthGuard, SuperAdminGuard)
     @Post(":id/suspend")
     async suspendAdmin(@Param("id", ParseUUIDPipe) adminId: string) {
         return this.adminAdminsService.suspendAdmin(adminId);
     }
 
-    @UseGuards(SuperAdminGuard)
+    @UseGuards(AdminAuthGuard, SuperAdminGuard)
     @Post(":id/reactivate")
     async reactivateAdmin(@Param("id", ParseUUIDPipe) adminId: string) {
         return this.adminAdminsService.reactivateAdmin(adminId);
     }
 
-    @UseGuards(SuperAdminGuard)
+    @UseGuards(AdminAuthGuard, SuperAdminGuard)
     @Delete(":id")
     async removeAdmin(@Param("id", ParseUUIDPipe) adminId: string) {
         return this.adminAdminsService.removeAdmin(adminId);
     }
 
-    @UseGuards(SuperAdminGuard)
+    @UseGuards(AdminAuthGuard, SuperAdminGuard)
     @Delete("invites/:inviteId")
     async cancelAdminInvite(
         @Param("inviteId", ParseUUIDPipe) inviteId: string

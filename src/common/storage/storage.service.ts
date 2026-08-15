@@ -108,4 +108,42 @@ export class StorageService {
       await this.deleteFolder(subfolder);
     }
   }
+
+  /**
+   * Recursively lists every file path under a folder prefix.
+   * This is used by the storage cleanup reconciliation job to compare
+   * against referenced files and find orphans.
+   *
+   * Returns an array of full relative paths (e.g., `admin/avatars/xxx/file.png`).
+   */
+  async listFiles(prefix: string): Promise<string[]> {
+    const { data: entries, error } = await this.supabase.storage
+      .from(this.bucket)
+      .list(prefix);
+
+    if (error) {
+      throw new ExternalServiceException('Supabase Storage', error.message);
+    }
+    if (!entries || entries.length === 0) return [];
+
+    const filePaths: string[] = [];
+    const subfolders: string[] = [];
+
+    for (const entry of entries) {
+      const fullPath = `${prefix}/${entry.name}`;
+      if (entry.metadata) {
+        filePaths.push(fullPath);
+      } else {
+        subfolders.push(fullPath);
+      }
+    }
+
+    // Recurse into subfolders and combine results
+    for (const subfolder of subfolders) {
+      const nestedFiles = await this.listFiles(subfolder);
+      filePaths.push(...nestedFiles);
+    }
+
+    return filePaths;
+  }
 }

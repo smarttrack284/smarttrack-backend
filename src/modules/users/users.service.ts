@@ -4,8 +4,8 @@ import { DataSource, EntityManager, Repository } from "typeorm";
 import { UserRole } from "#/common/entities/user-role.entity";
 import { TeamRoleType } from "#/common/types/team-role.type";
 import {
-  BadRequestAppException,
-  UnauthorizedAppException,
+    BadRequestAppException,
+    UnauthorizedAppException,
     RateLimitedException,
     ExternalServiceException,
     ForbiddenAppException,
@@ -26,6 +26,7 @@ import { UpdatePasswordDto } from "#/modules/users/dto/update-password.dto";
 import { ConfigService } from "@nestjs/config";
 import { ErrorHandlerService } from "#/common/errors/error-handler.service";
 import { randomUUID } from "crypto";
+import { StorageCleanupService } from "#/modules/storage-cleanup/storage-cleanup.service";
 
 @Injectable()
 export class UsersService {
@@ -39,7 +40,8 @@ export class UsersService {
         private readonly config: ConfigService,
         private readonly errorHandler: ErrorHandlerService,
         @Inject(SUPABASE_PUBLIC)
-        private readonly supabasePublic: SupabaseClient
+        private readonly supabasePublic: SupabaseClient,
+        private readonly storageCleanupService: StorageCleanupService,
     ) {}
 
     /**
@@ -251,7 +253,7 @@ export class UsersService {
         let previousMetadata: Record<string, unknown> = {};
 
         try {
-            //  Resolve user and snapshot current metadata
+            // Resolve user and snapshot current metadata
             const supabaseUser = await this.getUserFromSupabase(userId);
             previousMetadata =
                 (supabaseUser.user_metadata as Record<string, unknown>) ?? {};
@@ -261,7 +263,6 @@ export class UsersService {
                 const ext = avatarFile.extension
                     .toLowerCase()
                     .replace(/^\./, "");
-
                 const existingFilename = previousMetadata.avatar_filename as
                     | string
                     | undefined;
@@ -287,9 +288,8 @@ export class UsersService {
                 });
             }
 
-            //  Build metadata update
+            // Build metadata update
             const metadataUpdate: Record<string, unknown> = {};
-
             if (dto.name !== undefined) {
                 metadataUpdate.full_name = dto.name.trim() || null;
             }
@@ -328,8 +328,6 @@ export class UsersService {
             }
 
             // Sync local DB
-            // If this fails, we must rollback Supabase metadata to keep stores
-            // consistent. Auth metadata is the source of truth for reads.
             try {
                 if (dto.name !== undefined) {
                     await this.userRoleRepo.update(
@@ -347,7 +345,7 @@ export class UsersService {
                     err: dbErr instanceof Error ? dbErr.message : String(dbErr)
                 });
 
-                // Best-effort rollback of Supabase metadata to previous state
+                // Best-effort rollback of Supabase metadata
                 if (supabaseUpdated) {
                     await this.supabaseAdmin.auth.admin
                         .updateUserById(userId, {
@@ -370,19 +368,12 @@ export class UsersService {
                 );
             }
 
-            // Delete old avatar only after full success
+            // Enqueue deletion of old avatar (instead of immediate delete)
             if (oldAvatarPath) {
-                await this.storageService
-                    .deleteFile(oldAvatarPath)
-                    .catch(err => {
-                        this.logger.error({
-                            msg: "Failed deleting old avatar",
-                            path: oldAvatarPath,
-                            userId,
-                            err:
-                                err instanceof Error ? err.message : String(err)
-                        });
-                    });
+                await this.storageCleanupService.enqueueDelete(
+                    oldAvatarPath,
+                    "old_user_avatar_replaced"
+                );
             }
 
             const updatedMetadata = updatedUser.user_metadata as Record<
@@ -397,25 +388,17 @@ export class UsersService {
                 avatarUrl: (updatedMetadata.avatar_url as string) ?? null
             };
         } catch (err) {
-            // Cleanup orphaned new avatar on any failure
+            // Enqueue cleanup of new avatar on failure
             if (newUploadedAvatarPath) {
-                await this.storageService
-                    .deleteFile(newUploadedAvatarPath)
-                    .catch(cleanupErr => {
-                        this.logger.error({
-                            msg: "Failed cleaning up uploaded avatar after error",
-                            path: newUploadedAvatarPath,
-                            userId,
-                            err:
-                                cleanupErr instanceof Error
-                                    ? cleanupErr.message
-                                    : String(cleanupErr)
-                        });
-                    });
+                await this.storageCleanupService.enqueueDelete(
+                    newUploadedAvatarPath,
+                    "user_avatar_upload_failed"
+                );
             }
             this.errorHandler.handle(err, "UsersService.updateUserProfile");
         }
     }
+
     /**
      * Updates a user's password.
      *

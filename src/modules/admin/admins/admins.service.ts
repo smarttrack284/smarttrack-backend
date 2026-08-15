@@ -44,6 +44,7 @@ import {
     ListAdminInvitesDto,
     AdminInviteStatus
 } from "./dto/list-admin-invites.dto";
+import { StorageCleanupService } from "#/modules/storage-cleanup/storage-cleanup.service";
 
 @Injectable()
 export class AdminAdminsService {
@@ -66,7 +67,8 @@ export class AdminAdminsService {
         private readonly errorHandler: ErrorHandlerService,
         private readonly adminAuditLogService: AdminAuditLogService,
         private readonly config: ConfigService,
-        private readonly storageService: StorageService
+        private readonly storageService: StorageService,
+        private readonly storageCleanupService: StorageCleanupService
     ) {
         this.adminUrl =
             this.config.get<string>("ADMIN_URL") ??
@@ -744,46 +746,57 @@ export class AdminAdminsService {
                         | undefined;
                 }
             } catch (err) {
-                // Non‑critical: we can still delete without the filename
                 this.logger.warn({
                     msg: `Failed to fetch Supabase user for avatar cleanup ${admin.userId}`,
                     err: err instanceof Error ? err.message : String(err)
                 });
             }
 
-            // Delete Supabase user completely
-            const { error: deleteError } =
-                await this.supabaseAdmin.auth.admin.deleteUser(admin.userId);
-            if (deleteError) {
-                throw new BadRequestAppException(
-                    "Unable to delete user from authentication system."
-                );
-            }
-
-            // Delete AdminUser record
+            // 1. Delete AdminUser record (source of truth for admin access)
             await this.withTransaction(undefined, async trx => {
                 const adminRepo = trx.getRepository(AdminUser);
                 await adminRepo.delete({ id: adminId });
             });
 
-            // Delete avatar file (best effort, after successful deletion)
+            // 2. Delete Supabase user (best effort, non-critical)
+            try {
+                const { error: deleteError } =
+                    await this.supabaseAdmin.auth.admin.deleteUser(
+                        admin.userId
+                    );
+                if (deleteError) {
+                    this.logger.error({
+                        msg: `Failed to delete Supabase user ${admin.userId} after DB removal`,
+                        err: deleteError.message
+                    });
+                }
+            } catch (supabaseErr) {
+                this.logger.error({
+                    msg: `Supabase deleteUser threw for ${admin.userId}`,
+                    err:
+                        supabaseErr instanceof Error
+                            ? supabaseErr.message
+                            : String(supabaseErr)
+                });
+            }
+
+            // 3. Enqueue avatar cleanup (reliable, retried)
             if (avatarFilename) {
                 const avatarPath = StoragePath.adminAvatar(
                     admin.userId,
                     avatarFilename
                 );
-                await this.storageService.deleteFile(avatarPath).catch(err => {
-                    this.logger.error({
-                        msg: `Failed to delete admin avatar for ${admin.userId}`,
-                        path: avatarPath,
-                        err: err instanceof Error ? err.message : String(err)
-                    });
-                });
+                await this.storageCleanupService.enqueueDelete(
+                    avatarPath,
+                    "admin_removed"
+                );
             }
 
+            // 4. Invalidate caches
             await this.cache.del(`admin:user:${admin.userId}`);
             await this.cache.del("admin:admins:list:*");
 
+            // 5. Audit log
             await this.adminAuditLogService.record({
                 adminUserId: null,
                 action: "admin.admin_removed",
@@ -812,6 +825,7 @@ export class AdminAdminsService {
             ]);
         }
     }
+    
     async updateOwnProfile(
         adminUserId: string,
         dto: UpdateOwnProfileDto,
@@ -936,19 +950,12 @@ export class AdminAdminsService {
                 );
             }
 
-            // Delete old avatar after full success
+            // Enqueue deletion of old avatar (replacement scenario)
             if (oldAvatarPath) {
-                await this.storageService
-                    .deleteFile(oldAvatarPath)
-                    .catch(err => {
-                        this.logger.error({
-                            msg: "Failed deleting old admin avatar",
-                            path: oldAvatarPath,
-                            adminUserId,
-                            err:
-                                err instanceof Error ? err.message : String(err)
-                        });
-                    });
+                await this.storageCleanupService.enqueueDelete(
+                    oldAvatarPath,
+                    "old_admin_avatar_replaced"
+                );
             }
 
             // Invalidate cache
@@ -982,21 +989,12 @@ export class AdminAdminsService {
                 createdAt: admin.createdAt
             };
         } catch (err) {
-            // Cleanup new avatar on failure
+            // Enqueue cleanup of new avatar if upload succeeded but later steps failed
             if (newUploadedAvatarPath) {
-                await this.storageService
-                    .deleteFile(newUploadedAvatarPath)
-                    .catch(cleanupErr => {
-                        this.logger.error({
-                            msg: "Failed cleaning up uploaded admin avatar after error",
-                            path: newUploadedAvatarPath,
-                            adminUserId,
-                            err:
-                                cleanupErr instanceof Error
-                                    ? cleanupErr.message
-                                    : String(cleanupErr)
-                        });
-                    });
+                await this.storageCleanupService.enqueueDelete(
+                    newUploadedAvatarPath,
+                    "admin_profile_update_failed"
+                );
             }
             this.errorHandler.handle(
                 err,
@@ -1004,6 +1002,7 @@ export class AdminAdminsService {
             );
         }
     }
+
     async listAdminInvites(dto: ListAdminInvitesDto) {
         const cacheKey = `admin:admins:invites:${this.buildInvitesCacheKey(
             dto

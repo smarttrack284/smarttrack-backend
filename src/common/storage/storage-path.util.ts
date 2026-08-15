@@ -24,6 +24,7 @@ export const StoragePath = {
         tripStopId: string,
         filename: string
     ) => `companies/${companyId}/pod/${tripStopId}/${filename}`,
+    
     adminAvatar(adminUserId: string, filename: string): string {
   return `admin/avatars/${adminUserId}/${filename}`;
 }

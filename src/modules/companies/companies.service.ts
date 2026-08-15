@@ -25,6 +25,8 @@ import { ErrorHandlerService, rule } from '#/common/errors/error-handler.service
 import { randomUUID } from 'crypto';
 import { CompanyNotificationSetting } from '#/common/entities/company-notification-settings.entity';
 import { UpdateCompanyNotificationDto } from './dto/update-company-notification.dto';
+import { StorageCleanupService } from
+'#/modules/storage-cleanup/storage-cleanup.service';
 
 @Injectable()
 export class CompaniesService {
@@ -43,7 +45,8 @@ export class CompaniesService {
         private readonly subscriptionsService: SubscriptionsService,
         private readonly usageService: UsageService,
         private readonly storageService: StorageService,
-        private readonly errorHandler: ErrorHandlerService
+        private readonly errorHandler: ErrorHandlerService,
+        private readonly storageCleanupService: StorageCleanupService,
     ) {}
 
     /**
@@ -281,134 +284,114 @@ export class CompaniesService {
      */
 
     async updateCompany(
-        companyId: string,
-        dto: UpdateCompanyDto,
-        logoFile?: {
-            buffer: Buffer;
-            contentType: string;
-            extension: string;
-        },
-        manager?: EntityManager
-    ) {
-        let newUploadedLogoPath: string | undefined;
-        let oldLogoPath: string | undefined;
+    companyId: string,
+    dto: UpdateCompanyDto,
+    logoFile?: {
+        buffer: Buffer;
+        contentType: string;
+        extension: string;
+    },
+    manager?: EntityManager
+) {
+    let newUploadedLogoPath: string | undefined;
+    let oldLogoPath: string | undefined;
 
-        try {
-            return await this.withTransaction(manager, async trx => {
-                const repo = trx.getRepository(Company);
+    try {
+        return await this.withTransaction(manager, async trx => {
+            const repo = trx.getRepository(Company);
 
-                const company = await repo.findOne({
-                    where: { id: companyId }
-                });
-
-                if (!company) {
-                    throw new ResourceNotFoundException(
-                        "The company you are trying to update could not be found."
-                    );
-                }
-
-                //  Email uniqueness check
-                if (dto.email && dto.email !== company.email) {
-                    const emailTaken = await repo.findOne({
-                        where: { email: dto.email }
-                    });
-
-                    if (emailTaken) {
-                        throw new ResourceConflictException(
-                            "A company with this email address already exists."
-                        );
-                    }
-                }
-
-                // Upload new logo (outside DB transaction is fine; we clean up on rollback)
-                let logoUrl: string | undefined;
-                let logoFilename: string | undefined;
-
-                if (logoFile) {
-                    if (company.logoFilename) {
-                        oldLogoPath = StoragePath.companyLogo(
-                            companyId,
-                            company.logoFilename
-                        );
-                    }
-
-                    const ext = logoFile.extension
-                        .toLowerCase()
-                        .replace(/^\./, "");
-                    logoFilename = `logo-${randomUUID()}.${ext}`;
-                    newUploadedLogoPath = StoragePath.companyLogo(
-                        companyId,
-                        logoFilename
-                    );
-
-                    logoUrl = await this.storageService.uploadFile({
-                        path: newUploadedLogoPath,
-                        buffer: logoFile.buffer,
-                        contentType: logoFile.contentType
-                    });
-                }
-
-                // Apply updates explicitly (never Object.assign)
-                if (dto.name !== undefined) company.name = dto.name.trim();
-                if (dto.email !== undefined) company.email = dto.email.trim();
-                if (logoUrl) {
-                    company.logoUrl = logoUrl;
-                    company.logoFilename = logoFilename || null;
-                }
-
-                const saved = await repo.save(company);
-
-                // Delete old logo only after DB commit succeeds
-                if (oldLogoPath) {
-                    await this.storageService
-                        .deleteFile(oldLogoPath)
-                        .catch(err => {
-                            this.logger.error({
-                                msg: "Failed to delete old company logo",
-                                path: oldLogoPath,
-                                companyId,
-                                err:
-                                    err instanceof Error
-                                        ? err.message
-                                        : String(err)
-                            });
-                        });
-                }
-
-                return this.standardCompanyData(saved);
+            const company = await repo.findOne({
+                where: { id: companyId },
             });
-        } catch (err) {
-            // Cleanup orphaned new logo on any failure
-            if (newUploadedLogoPath) {
-                await this.storageService
-                    .deleteFile(newUploadedLogoPath)
-                    .catch(cleanupErr => {
-                        this.logger.error({
-                            msg: "Failed cleaning up uploaded company logo after error",
-                            path: newUploadedLogoPath,
-                            companyId,
-                            err:
-                                cleanupErr instanceof Error
-                                    ? cleanupErr.message
-                                    : String(cleanupErr)
-                        });
-                    });
+
+            if (!company) {
+                throw new ResourceNotFoundException(
+                    "The company you are trying to update could not be found.",
+                );
             }
-            this.errorHandler.handle(err, "CompaniesService.updateCompany", [
-                rule(QueryFailedError, e => {
-                    const pg = (e as any).driverError;
-                    if (pg?.code === "23505") {
-                        return new ResourceConflictException(
-                            "This change conflicts with an existing company record."
-                        );
-                    }
-                    return new InternalErrorException(
-                        "An unexpected error occurred. Please try again later."
+
+            // Email uniqueness check
+            if (dto.email && dto.email !== company.email) {
+                const emailTaken = await repo.findOne({
+                    where: { email: dto.email },
+                });
+                if (emailTaken) {
+                    throw new ResourceConflictException(
+                        "A company with this email address already exists.",
                     );
-                })
-            ]);
+                }
+            }
+
+            // Upload new logo (outside DB transaction is fine; we clean up on rollback)
+            let logoUrl: string | undefined;
+            let logoFilename: string | undefined;
+
+            if (logoFile) {
+                if (company.logoFilename) {
+                    oldLogoPath = StoragePath.companyLogo(
+                        companyId,
+                        company.logoFilename,
+                    );
+                }
+
+                const ext = logoFile.extension.toLowerCase().replace(/^\./, "");
+                logoFilename = `logo-${randomUUID()}.${ext}`;
+                newUploadedLogoPath = StoragePath.companyLogo(
+                    companyId,
+                    logoFilename,
+                );
+
+                logoUrl = await this.storageService.uploadFile({
+                    path: newUploadedLogoPath,
+                    buffer: logoFile.buffer,
+                    contentType: logoFile.contentType,
+                });
+            }
+
+            // Apply updates explicitly
+            if (dto.name !== undefined) company.name = dto.name.trim();
+            if (dto.email !== undefined) company.email = dto.email.trim();
+            if (logoUrl) {
+                company.logoUrl = logoUrl;
+                company.logoFilename = logoFilename || null;
+            }
+
+            const saved = await repo.save(company);
+
+            // Enqueue deletion of old logo (instead of immediate delete)
+            if (oldLogoPath) {
+                await this.storageCleanupService.enqueueDelete(
+                    oldLogoPath,
+                    "old_company_logo_replaced",
+                );
+            }
+
+            return this.standardCompanyData(saved);
+        });
+    } catch (err) {
+        // Enqueue cleanup of new logo on failure (instead of immediate delete)
+        if (newUploadedLogoPath) {
+            await this.storageCleanupService.enqueueDelete(
+                newUploadedLogoPath,
+                "company_logo_update_failed",
+            );
         }
+
+        this.errorHandler.handle(err, "CompaniesService.updateCompany", [
+            rule(QueryFailedError, e => {
+                const pg = (e as any).driverError;
+                if (pg?.code === "23505") {
+                    return new ResourceConflictException(
+                        "This change conflicts with an existing company record.",
+                    );
+                }
+                return new InternalErrorException(
+                    "An unexpected error occurred. Please try again later.",
+                );
+            }),
+        ]);
     }
+}
 
     async deleteCompany(
         companyId: string,
