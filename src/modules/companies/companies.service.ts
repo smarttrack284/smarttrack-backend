@@ -1,46 +1,30 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
-import {
-    DataSource,
-    EntityManager,
-    QueryFailedError,
-    Repository,
-    In
-} from "typeorm";
-import { Company } from "#/common/entities/company.entity";
-import {
-    InternalErrorException,
-    ResourceConflictException,
-    ResourceNotFoundException
-} from "#/common/exceptions";
-import { User } from "@supabase/supabase-js";
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, EntityManager, In, QueryFailedError, Repository } from 'typeorm';
+import { Company } from '#/common/entities/company.entity';
+import { InternalErrorException, ResourceConflictException, ResourceNotFoundException } from '#/common/exceptions';
+import { User } from '@supabase/supabase-js';
 
-import { CreateCompanyDto } from "./dto/create-company.dto";
-import { UpdateCompanyDto } from "./dto/update-company.dto";
-import { UsersService } from "#/modules/users/users.service";
-import { TeamRoleType } from "#/common/types/team-role.type";
-import { UsageService } from "#/modules/usage/usage.service";
-import { SubscriptionsService } from "#/modules/subscriptions/subscriptions.service";
-import { SubscriptionPlan } from "#/common/constants/subscription-plan.constant";
-import { TeamMemberStatus } from "#/common/constants/team-member-status.constant";
-import { StorageService } from "#/common/storage/storage.service";
-import { StoragePath } from "#/common/storage/storage-path.util";
-import { UserRole } from "#/common/entities/user-role.entity";
-import { Order } from "#/common/entities/order.entity";
-import { UpdateSavedLocationDto } from "./dto/update-saved-location.dto";
-import { CreateSavedLocationDto } from "./dto/create-saved-location.dto";
-import { ApiKey } from "#/common/entities/api-key.entity";
-import {
-    SavedLocation,
-    SavedLocationKind
-} from "#/common/entities/saved-location.entity";
-import {
-    ErrorHandlerService,
-    rule
-} from "#/common/errors/error-handler.service";
-import { randomUUID } from "crypto";
-import { CompanyNotificationSetting } from "#/common/entities/company-notification-settings.entity";
-import { UpdateCompanyNotificationDto } from "./dto/update-company-notification.dto";
+import { CreateCompanyDto } from './dto/create-company.dto';
+import { UpdateCompanyDto } from './dto/update-company.dto';
+import { UsersService } from '#/modules/users/users.service';
+import { TeamRoleType } from '#/common/types/team-role.type';
+import { UsageService } from '#/modules/usage/usage.service';
+import { SubscriptionsService } from '#/modules/subscriptions/subscriptions.service';
+import { SubscriptionPlan } from '#/common/constants/subscription-plan.constant';
+import { TeamMemberStatus } from '#/common/constants/team-member-status.constant';
+import { StorageService } from '#/common/storage/storage.service';
+import { StoragePath } from '#/common/storage/storage-path.util';
+import { UserRole } from '#/common/entities/user-role.entity';
+import { Order } from '#/common/entities/order.entity';
+import { UpdateSavedLocationDto } from './dto/update-saved-location.dto';
+import { CreateSavedLocationDto } from './dto/create-saved-location.dto';
+import { ApiKey } from '#/common/entities/api-key.entity';
+import { SavedLocation, SavedLocationKind } from '#/common/entities/saved-location.entity';
+import { ErrorHandlerService, rule } from '#/common/errors/error-handler.service';
+import { randomUUID } from 'crypto';
+import { CompanyNotificationSetting } from '#/common/entities/company-notification-settings.entity';
+import { UpdateCompanyNotificationDto } from './dto/update-company-notification.dto';
 
 @Injectable()
 export class CompaniesService {
@@ -101,10 +85,7 @@ export class CompaniesService {
                 ((supabaseUser.user_metadata as Record<string, unknown> | null)
                     ?.full_name as string | undefined) ?? ownerEmail;
 
-            // Transaction
-            // NOTE: The manual email uniqueness check below is subject to a race
-            // condition. The QueryFailedError handler at the bottom catches the
-            // Postgres 23505 unique violation as a safety net.
+
             return await this.withTransaction(manager, async trx => {
                 const companyRepo = trx.getRepository(Company);
 

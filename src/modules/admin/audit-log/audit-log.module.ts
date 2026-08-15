@@ -4,11 +4,12 @@ import { AdminAuditLog } from '#/common/entities/admin-audit-log.entity';
 import { AdminAuditLogController } from './audit-log.controller';
 import { AdminAuditLogService } from './audit-log.service';
 import { UsersModule } from '#/modules/users/users.module';
+import { AdminUser } from '#/common/entities/admin-user.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AdminAuditLog]), UsersModule],
+  imports: [TypeOrmModule.forFeature([AdminAuditLog, AdminUser]), UsersModule],
   controllers: [AdminAuditLogController],
-  providers: [AdminAuditLogService,],
-  exports: [AdminAuditLogService,],
+  providers: [AdminAuditLogService],
+  exports: [AdminAuditLogService],
 })
 export class AdminAuditLogModule {}

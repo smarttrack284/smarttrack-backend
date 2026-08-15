@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminCompaniesController } from './companies.controller';
 import { AdminCompaniesService } from './companies.service';
-import { AdminAuthGuard } from "#/common/guards/admin-auth.guard";
+import { AdminAuthGuard } from '#/common/guards/admin-auth.guard';
 import { Company } from '#/common/entities/company.entity';
 import { Subscription } from '#/common/entities/subscription.entity';
 import { Usage } from '#/common/entities/usage.entity';
@@ -15,6 +15,7 @@ import { WebhookDelivery } from '#/common/entities/webhook-delivery.entity';
 import { AdminAuditLog } from '#/common/entities/admin-audit-log.entity';
 import { UsersModule } from '#/modules/users/users.module';
 import { AdminUsersModule } from '#/modules/admin/users/users.module';
+import { AdminUser } from '#/common/entities/admin-user.entity';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { AdminUsersModule } from '#/modules/admin/users/users.module';
       WebhookEndpoint,
       WebhookDelivery,
       AdminAuditLog,
+      AdminUser,
     ]),
     ActivityLogModule,
     UsersModule,

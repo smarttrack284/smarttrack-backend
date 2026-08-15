@@ -26,12 +26,10 @@ export class OverviewController {
   @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
   @Get()
   async getOverview(@CurrentUser() user: AuthenticatedUser) {
-    const userRole = await this.usersService.getUserRoleByUserId(user.id);
-
     const [kpis, activity, recentOrders] = await Promise.all([
-      this.overviewService.getKpis(userRole.companyId),
-      this.overviewService.getRecentActivity(userRole.companyId),
-      this.overviewService.getRecentOrders(userRole.companyId),
+      this.overviewService.getKpis(user.companyId!),
+      this.overviewService.getRecentActivity(user.companyId!),
+      this.overviewService.getRecentOrders(user.companyId!),
     ]);
     return { kpis, activity, recentOrders };
   }
@@ -41,9 +39,7 @@ export class OverviewController {
   @Roles(TeamRoleType.OWNER, TeamRoleType.ADMIN, TeamRoleType.DISPATCHER)
   @Get('advanced/kpis')
   async getAdvancedKpis(@CurrentUser() user: AuthenticatedUser) {
-    const userRole = await this.usersService.getUserRoleByUserId(user.id);
-
-    return this.overviewService.getAdvancedKpis(userRole.companyId);
+    return this.overviewService.getAdvancedKpis(user.companyId!);
   }
 
   @UseGuards(SupabaseAuthGuard, PlanGuard, RolesGuard)
@@ -54,10 +50,8 @@ export class OverviewController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() activityQuery: ListActivityLogQueryDto,
   ) {
-    const userRole = await this.usersService.getUserRoleByUserId(user.id);
-
     return this.overviewService.getAdvancedActivity(
-      userRole.companyId,
+      user.companyId!,
       activityQuery,
     );
   }
@@ -70,10 +64,8 @@ export class OverviewController {
     @CurrentUser() user: AuthenticatedUser,
     @Query() ordersQuery: ListOrdersQueryDto,
   ) {
-    const userRole = await this.usersService.getUserRoleByUserId(user.id);
-
     return this.overviewService.getAdvancedRecentOrders(
-      userRole.companyId,
+      user.companyId!,
       ordersQuery,
     );
   }
